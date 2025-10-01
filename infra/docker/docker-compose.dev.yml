@@ -1,0 +1,42 @@
+# PConstruct/infra/docker/docker-compose.dev.yml
+
+services:
+  # --- Servicio de Usuarios ---
+  user-service:
+    build:
+      context: ../../services/users
+      dockerfile: Dockerfile
+    image: user-service-dev
+    container_name: user-service-container
+    # YA NO USAMOS 'env_file', porque Compose lee el .env principal automáticamente.
+    # En su lugar, inyectamos las variables que necesita este servicio.
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - SECRET_KEY=${SECRET_KEY}
+      - ALGORITHM=${ALGORITHM}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
+    expose:
+      - "8001"
+    networks:
+      - pcbuilder_net
+
+  # --- API Gateway ---
+  api-gateway:
+    build:
+      context: ../../api_gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway-container
+    ports:
+      - "8000:8000"
+    environment:
+      - USER_SERVICE_URL=http://user-service:8001
+      - JWT_SECRET=${JWT_SECRET} # Asegúrate de tener JWT_SECRET en tu .env
+    depends_on:
+      - user-service
+    networks:
+      - pcbuilder_net
+
+# --- Red Compartida ---
+networks:
+  pcbuilder_net:
+    driver: bridge

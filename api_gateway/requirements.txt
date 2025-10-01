@@ -1,0 +1,6 @@
+# api-gateway/requirements.txt
+fastapi>=0.95.0
+uvicorn[standard]
+httpx
+python-dotenv
+PyJWT

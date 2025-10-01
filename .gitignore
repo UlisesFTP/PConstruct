@@ -1,0 +1,23 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# VSCode
+.vscode/
+
+# Flutter/Dart
+/Front/my_app/build/
+/Front/my_app/.dart_tool/
+/Front/my_app/.idea/
+/Front/my_app/my_app.iml
+/Front/build/
+
+# Docker
+infra/docker/.env
+
+# Other
+.DS_Store
