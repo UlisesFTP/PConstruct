@@ -16,6 +16,8 @@ RUN pip install --no-cache-dir -r /code/requirements.txt
 # Usamos la misma base para la imagen final.
 FROM python:3.11.5-slim
 
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+
 # Establecemos el directorio de trabajo.
 WORKDIR /code
 
@@ -25,6 +27,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copiamos el código de nuestra aplicación.
 COPY ./app /code/app
+
 
 # Exponemos el puerto 8001.
 EXPOSE 8001

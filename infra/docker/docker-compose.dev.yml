@@ -8,13 +8,24 @@ services:
       dockerfile: Dockerfile
     image: user-service-dev
     container_name: user-service-container
-    # YA NO USAMOS 'env_file', porque Compose lee el .env principal automáticamente.
-    # En su lugar, inyectamos las variables que necesita este servicio.
+    
+    # --- ¡CORRECCIÓN AQUÍ! ---
+    # Lee las variables del archivo .env
+    env_file:
+      - ./.env
+    # -------------------------
+
+    # Pasa las variables al contenedor
     environment:
       - DATABASE_URL=${DATABASE_URL}
-      - SECRET_KEY=${SECRET_KEY}
+      - SECRET_KEY=${SECRET_KEY} # Nota: 'SECRET_KEY' y 'JWT_SECRET' son dos nombres diferentes. Asegúrate de usar el mismo en tu código.
       - ALGORITHM=${ALGORITHM}
       - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
+      - SMTP_SERVER=${SMTP_SERVER}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_APP_PASSWORD=${SMTP_APP_PASSWORD}
+      - FRONTEND_URL=${FRONTEND_URL}
     expose:
       - "8001"
     networks:
@@ -28,11 +39,43 @@ services:
     container_name: api-gateway-container
     ports:
       - "8000:8000"
+    
+    # --- ¡CORRECCIÓN AQUÍ! ---
+    # Lee las variables del archivo .env
+    env_file:
+      - ./.env
+    # -------------------------
+
     environment:
       - USER_SERVICE_URL=http://user-service:8001
-      - JWT_SECRET=${JWT_SECRET} # Asegúrate de tener JWT_SECRET en tu .env
+      - POSTS_SERVICE_URL=http://posts-service:8002
+      - JWT_SECRET=${JWT_SECRET} # Esta es la que usa tu api_gateway/jwt_utils.py
+      # Cloudinary vars se cargarán automáticamente desde el env_file
+      - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
+      - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
+      - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
     depends_on:
       - user-service
+      - posts-service
+    networks:
+      - pcbuilder_net
+
+  # --- Servicio de Publicaciones ---
+  posts-service:
+    build: ../../services/posts
+    container_name: posts-service-container
+
+    # --- ¡CORRECCIÓN AQUÍ! ---
+    # Lee las variables del archivo .env
+    env_file:
+      - ./.env
+    # -------------------------
+
+    environment:
+      - POSTS_DATABASE_URL=${POSTS_DATABASE_URL}
+      - USER_SERVICE_URL=${USER_SERVICE_URL}
+    expose:
+      - "8002"
     networks:
       - pcbuilder_net
 

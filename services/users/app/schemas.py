@@ -1,5 +1,5 @@
 # services/users-service/app/schemas.py
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, ConfigDict
 from typing import Optional
 from datetime import datetime
 
@@ -14,6 +14,7 @@ class UserCreate(UserBase):
 class UserResponse(UserBase):
     user_id: int  # Cambió de 'id' a 'user_id'
     is_active: bool
+    is_verified: bool
     role: str
     country_code: Optional[str] = None
     created_at: Optional[datetime] = None
@@ -51,3 +52,20 @@ class PasswordResetRequest(BaseModel):
 class MessageResponse(BaseModel):
     message: str
     success: bool = True
+    
+    
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str
+    
+    
+class UserSummary(BaseModel):
+    """Esquema reducido con la información pública de un usuario."""
+    user_id: int
+    username: str
+    name: Optional[str] = None
+    
+    model_config = ConfigDict(from_attributes=True)

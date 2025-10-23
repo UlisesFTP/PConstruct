@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+asyncpg
+python-dotenv
+httpx  # <-- Añade esta línea

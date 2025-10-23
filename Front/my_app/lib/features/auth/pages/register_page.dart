@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:my_app/features/auth/widgets/auth_layout.dart';
+import 'package:my_app/core/widgets/auth_layout.dart';
 import 'package:my_app/core/widgets/custom_text_field.dart';
 import 'package:my_app/core/api/api_client.dart';
 

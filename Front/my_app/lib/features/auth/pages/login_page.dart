@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:my_app/features/auth/widgets/auth_layout.dart';
+import 'package:my_app/core/widgets/auth_layout.dart';
 import 'package:my_app/core/widgets/custom_text_field.dart';
 import 'package:my_app/core/api/api_client.dart';
+import 'package:my_app/providers/auth_provider.dart';
+import 'package:provider/provider.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -18,7 +20,6 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-  final ApiClient _apiClient = ApiClient();
 
   @override
   void dispose() {
@@ -72,36 +73,40 @@ class _LoginPageState extends State<LoginPage> {
     Navigator.pushNamed(context, '/recovery');
   }
 
+  // DENTRO DE _LoginPageState
+
   // Función principal de login
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
     try {
-      final response = await _apiClient.login(
+      // --- AQUÍ ES DONDE VAN LAS LÍNEAS ---
+
+      // 1. Obtenemos la instancia GLOBAL de ApiClient desde el Provider.
+      final apiClient = Provider.of<ApiClient>(context, listen: false);
+
+      // 2. Usamos esa instancia para llamar a la función de login.
+      final response = await apiClient.login(
         _usernameController.text.trim(),
         _passwordController.text,
       );
 
-      // Login exitoso
-      _showMessage('¡Inicio de sesión exitoso!', isError: false);
+      // El resto de tu lógica se mantiene igual...
+      Provider.of<AuthProvider>(context, listen: false).login(response);
 
-      // Aquí puedes navegar a la página principal de la app
-      // Navigator.pushNamedAndRemoveUntil(context, '/dashboard', (route) => false);
-
-      // Por ahora, solo mostrar un diálogo de éxito
-      _showSuccessDialog(response);
+      Navigator.pushNamedAndRemoveUntil(context, '/feed', (route) => false);
     } catch (e) {
       _showMessage('Error: ${e.toString()}');
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 

@@ -1,20 +1,20 @@
-# services/users-service/app/main.py
-from fastapi import FastAPI, Depends, HTTPException, status
+# PConstruct/services/users/app/main.py
+
+import os
+from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
-from jose import JWTError, jwt
-from passlib.context import CryptContext
+from jose import jwt
 import random
 import string
-from sqlalchemy import text  # Añadir este import al inicio
+from fastapi import Query
+from typing import List
 
-# Importaciones corregidas (sin puntos relativos)
-from . import crud, models, schemas
-from .database import SessionLocal, engine
-
-# NO crear tablas automáticamente ya que tu DB ya existe
-# models.Base.metadata.create_all(bind=engine)
+# Importaciones de tu proyecto
+from . import crud, models, schemas, email_utils
+# Importamos la nueva dependencia asíncrona desde database.py
+from .database import get_db
 
 app = FastAPI(title="Users Service", version="0.1.0")
 
@@ -27,199 +27,199 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Security
-SECRET_KEY = "a_very_secret_key_that_should_be_changed"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# Simulación de almacenamiento de códigos de verificación (en producción usar Redis)
+# Diccionario en memoria para los códigos (simple para desarrollo)
 verification_codes = {}
 
-def get_db():
-    db = SessionLocal()
-    try:
-        # Test de conexión simple antes de usar
-        db.execute(text("SELECT 1"))
-        yield db
-    except Exception as e:
-        print(f"Database error: {e}")
-        db.rollback()
-        raise
-    finally:
-        db.close()
-
-def create_access_token(data: dict, expires_delta: timedelta | None = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
-
 def generate_verification_code():
-    """Genera un código de verificación de 6 dígitos"""
     return ''.join(random.choices(string.digits, k=6))
 
-# Health check
+# --- ENDPOINTS DE LA APLICACIÓN (AHORA ASÍNCRONOS) ---
+
 @app.get("/health")
-def health_check():
+async def health_check():
     return {"status": "healthy", "service": "users", "timestamp": datetime.now()}
 
-# Endpoints de autenticación
 @app.post("/auth/register", response_model=schemas.UserResponse)
-def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    print(f"Datos recibidos: {user.dict()}")
-    # Verificar si el usuario ya existe
-    db_user = crud.get_user_by_username(db, username=user.username)
-    if db_user:
+async def register_user(
+    user: schemas.UserCreate,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
+    if await crud.get_user_by_username(db, username=user.username):
         raise HTTPException(status_code=400, detail="Username already registered")
-    
-    # Verificar si el email ya existe
-    db_email = crud.get_user_by_email(db, email=user.email)
-    if db_email:
+    if await crud.get_user_by_email(db, email=user.email):
         raise HTTPException(status_code=400, detail="Email already registered")
     
-    # Crear usuario
-    created_user = crud.create_user(db=db, user=user)
+    created_user = await crud.create_user(db=db, user=user)
     
-    # Generar código de verificación
     verification_code = generate_verification_code()
     verification_codes[user.email] = {
         'code': verification_code,
         'expires': datetime.now() + timedelta(minutes=10),
-        'user_id': created_user.user_id  # Cambiado de id a user_id
     }
     
-    # TODO: Enviar email con código de verificación
-    print(f"Código de verificación para {user.email}: {verification_code}")
+    # El correo se envía en segundo plano para una respuesta instantánea
+    background_tasks.add_task(
+        email_utils.send_verification_email, user.email, verification_code
+    )
     
     return created_user
 
+
+
 @app.post("/auth/login")
-def login_user(login_data: schemas.LoginRequest, db: Session = Depends(get_db)):
-    # Autenticar usuario
-    user = crud.authenticate_user(db, login_data.username, login_data.password)
+async def login_user(login_data: schemas.LoginRequest, db: AsyncSession = Depends(get_db)):
+    user = await crud.authenticate_user(db, login_data.username, login_data.password)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password"
-        )
+        raise HTTPException(status_code=401, detail="Incorrect username or password")
+        
+    if not user.is_verified:
+        raise HTTPException(status_code=403, detail="Email not verified. Please check your inbox.")
     
-    # Crear token de acceso
+    # --- ASEGÚRATE DE QUE ESTAS LÍNEAS ESTÉN AQUÍ ---
+    ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
+    SECRET_KEY = os.getenv("SECRET_KEY", "a_very_secret_key_that_should_be_changed")
+    ALGORITHM = os.getenv("ALGORITHM", "HS256")
+    
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
-    )
+    to_encode = {"sub": user.username, "exp": datetime.utcnow() + access_token_expires}
+    access_token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user": {
-            "id": user.user_id,  # Cambiado de id a user_id
-            "username": user.username,
-            "email": user.email,
-            "name": user.name,  # Cambiado de first_name a name
-            "role": user.role,
-            "is_active": user.is_active
-        }
+        "user": user
     }
 
+
 @app.post("/auth/verify-email", response_model=schemas.MessageResponse)
-def verify_email(verification: schemas.EmailVerificationRequest, db: Session = Depends(get_db)):
-    # Verificar si existe el código
-    if verification.email not in verification_codes:
-        raise HTTPException(status_code=400, detail="Verification code not found")
+async def verify_email(verification: schemas.EmailVerificationRequest, db: AsyncSession = Depends(get_db)):
+    stored_code_info = verification_codes.get(verification.email)
+
+    if not stored_code_info or \
+       stored_code_info['code'] != verification.verification_code or \
+       datetime.now() > stored_code_info['expires']:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
     
-    stored_data = verification_codes[verification.email]
-    
-    # Verificar si el código ha expirado
-    if datetime.now() > stored_data['expires']:
-        del verification_codes[verification.email]
-        raise HTTPException(status_code=400, detail="Verification code has expired")
-    
-    # Verificar si el código es correcto
-    if stored_data['code'] != verification.verification_code:
-        raise HTTPException(status_code=400, detail="Invalid verification code")
-    
-    # Marcar usuario como verificado (necesitarías añadir is_verified a tu tabla)
-    user = crud.get_user_by_email(db, verification.email)
+    user = await crud.get_user_by_email(db, verification.email)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    await crud.verify_user_email(db=db, user=user)
     
-    # Limpiar código usado
     del verification_codes[verification.email]
     
-    return schemas.MessageResponse(
-        message="Email verified successfully",
-        success=True
-    )
+    return schemas.MessageResponse(message="Email verified successfully")
 
 @app.post("/auth/resend-verification", response_model=schemas.MessageResponse)
-def resend_verification_code(request: schemas.ResendVerificationRequest, db: Session = Depends(get_db)):
-    # Verificar si el usuario existe
-    user = crud.get_user_by_email(db, request.email)
+async def resend_verification_code(
+    request: schemas.ResendVerificationRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
+    user = await crud.get_user_by_email(db, request.email)
     if not user:
         raise HTTPException(status_code=404, detail="Email not found")
+    if user.is_verified:
+        return schemas.MessageResponse(message="This account is already verified.")
     
-    # Generar nuevo código
     verification_code = generate_verification_code()
     verification_codes[request.email] = {
         'code': verification_code,
         'expires': datetime.now() + timedelta(minutes=10),
-        'user_id': user.user_id  # Cambiado de id a user_id
     }
     
-    # TODO: Enviar email con nuevo código
-    print(f"Nuevo código de verificación para {request.email}: {verification_code}")
-    
-    return schemas.MessageResponse(
-        message="Verification code resent successfully",
-        success=True
+    background_tasks.add_task(
+        email_utils.send_verification_email, request.email, verification_code
     )
+    
+    return schemas.MessageResponse(message="Verification code resent successfully")
+
+# ... (Aquí irían tus otros endpoints, también convertidos a async si usan la DB)
+
+
+# ... (importaciones existentes)
+
+# --- NUEVAS FUNCIONES DE AYUDA PARA TOKENS DE RESETEO ---
+
+def create_password_reset_token(email: str):
+    """Crea un token JWT especial para reseteo de contraseña, válido por 1 hora."""
+    expire = datetime.utcnow() + timedelta(hours=1)
+    to_encode = {
+        "exp": expire,
+        "sub": email,
+        "scope": "password_reset" # Para asegurar que el token solo sirva para esto
+    }
+    SECRET_KEY = os.getenv("SECRET_KEY", "a_very_secret_key")
+    ALGORITHM = "HS256"
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+def decode_password_reset_token(token: str) -> str:
+    """Valida el token de reseteo y devuelve el email."""
+    try:
+        SECRET_KEY = os.getenv("SECRET_KEY", "a_very_secret_key")
+        ALGORITHM = "HS256"
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        
+        if payload.get("scope") != "password_reset":
+            raise HTTPException(status_code=401, detail="Invalid token scope")
+            
+        return payload.get("sub")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+# --- NUEVOS ENDPOINTS ---
+
+@app.post("/auth/request-password-reset", response_model=schemas.MessageResponse)
+async def request_password_reset(
+    request: schemas.PasswordResetRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
+    user = await crud.get_user_by_email(db, email=request.email)
+    if user:
+        # Generar token y enviar correo en segundo plano
+        reset_token = create_password_reset_token(email=request.email)
+        # DEBES crear esta nueva función en tu email_utils.py
+        background_tasks.add_task(
+            email_utils.send_password_reset_email,
+            recipient_email=request.email,
+            reset_token=reset_token
+        )
+    # Por seguridad, siempre devolvemos el mismo mensaje, exista o no el correo.
+    return schemas.MessageResponse(message="If an account with that email exists, a password reset link has been sent.")
 
 @app.post("/auth/reset-password", response_model=schemas.MessageResponse)
-def request_password_reset(request: schemas.PasswordResetRequest, db: Session = Depends(get_db)):
-    # Verificar si el usuario existe
-    user = crud.get_user_by_email(db, request.email)
+async def reset_password(
+    request: schemas.PasswordResetConfirm,
+    db: AsyncSession = Depends(get_db)
+):
+    email = decode_password_reset_token(request.token)
+    if not email:
+        raise HTTPException(status_code=400, detail="Invalid token")
+
+    user = await crud.get_user_by_email(db, email=email)
     if not user:
-        # Por seguridad, no revelar si el email existe o no
-        return schemas.MessageResponse(
-            message="If the email exists, a password reset link has been sent",
-            success=True
-        )
-    
-    # TODO: Generar token de reset y enviar email
-    print(f"Password reset requested for {request.email}")
-    
-    return schemas.MessageResponse(
-        message="If the email exists, a password reset link has been sent",
-        success=True
-    )
-
-# Endpoints de usuario
-@app.get("/users/{user_id}", response_model=schemas.UserResponse)
-def get_user(user_id: int, db: Session = Depends(get_db)):
-    user = crud.get_user_by_id(db, user_id=user_id)
-    if user is None:
         raise HTTPException(status_code=404, detail="User not found")
-    return user
-
-# Endpoint para obtener usuario actual (usado por el API Gateway)
-@app.get("/users/me", response_model=schemas.UserResponse)
-def get_current_user(user_id: str = None, db: Session = Depends(get_db)):
-    # En un escenario real, esto vendría del token JWT
-    # Por ahora, usamos el user_id pasado por el API Gateway
-    if not user_id:
-        raise HTTPException(status_code=401, detail="User ID not provided")
+        
+    await crud.update_user_password(db, user=user, new_password=request.new_password)
     
-    try:
-        user = crud.get_user_by_id(db, user_id=int(user_id))
-        if user is None:
-            raise HTTPException(status_code=404, detail="User not found")
-        return user
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid user ID")
+    return schemas.MessageResponse(message="Password has been reset successfully.")
+
+
+@app.get("/users/profiles", response_model=List[schemas.UserSummary])
+async def read_user_profiles(
+    user_ids: List[int] = Query(...), 
+    db: AsyncSession = Depends(get_db)
+):
+    """Obtiene perfiles resumidos para una lista de IDs de usuario."""
+    users = await crud.get_users_by_ids(db, user_ids=user_ids)
+    return users
+
+
+@app.get("/users/search/", response_model=List[schemas.UserSummary])
+async def search_users_endpoint(q: str, db: AsyncSession = Depends(get_db)):
+    """Endpoint para buscar usuarios."""
+    users = await crud.search_users(db, query=q)
+    return users
