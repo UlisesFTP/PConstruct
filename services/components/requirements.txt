@@ -1,0 +1,12 @@
+# PConstruct/services/components/requirements.txt
+asyncpg
+fastapi>=0.95.0
+uvicorn[standard]>=0.20.0
+sqlalchemy>=2.0.0
+# psycopg2-binary # O asyncpg si vas a cambiar database.py a asíncrono
+pydantic>=1.10.0
+pydantic-settings
+python-dotenv>=1.0.0 # Para cargar variables de entorno como DATABASE_URL desde .env
+
+# Dependencias específicas de los modelos y lógica
+# (SQLAlchemy ya incluye soporte para Enum y JSON básico)

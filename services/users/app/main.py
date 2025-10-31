@@ -1,5 +1,4 @@
 # PConstruct/services/users/app/main.py
-
 import os
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,7 +11,7 @@ from fastapi import Query
 from typing import List
 
 # Importaciones de tu proyecto
-from . import crud, models, schemas, email_utils
+from . import crud, schemas, email_utils
 # Importamos la nueva dependencia asíncrona desde database.py
 from .database import get_db
 

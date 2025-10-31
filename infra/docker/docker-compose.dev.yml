@@ -49,6 +49,10 @@ services:
     environment:
       - USER_SERVICE_URL=http://user-service:8001
       - POSTS_SERVICE_URL=http://posts-service:8002
+      - COMPONENT_SERVICE_URL=http://component-service:8003 # Añadir/Verificar
+      #- BUILD_SERVICE_URL=http://build-service:8004 # Añadir/Verificar
+      - PRICE_SERVICE_URL=http://pricing-service:8005 # ¡Añadir!
+     # - BENCHMARK_SERVICE_URL=http://benchmark-service:8006 # Añ
       - JWT_SECRET=${JWT_SECRET} # Esta es la que usa tu api_gateway/jwt_utils.py
       # Cloudinary vars se cargarán automáticamente desde el env_file
       - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
@@ -57,6 +61,9 @@ services:
     depends_on:
       - user-service
       - posts-service
+      - component-service 
+      - pricing-service
+      - rabbitmq
     networks:
       - pcbuilder_net
 
@@ -79,7 +86,78 @@ services:
     networks:
       - pcbuilder_net
 
+  # --- Servicio de Componentes ---
+  component-service:
+    build:
+      context: ../../services/components
+      dockerfile: Dockerfile
+    image: component-service-dev
+    container_name: component-service-container
+    env_file:
+      - ./.env # Si necesita variables de entorno (ej. DATABASE_URL)
+    environment:
+      - COMPONENTS_DATABASE_URL=${COMPONENTS_DATABASE_URL}
+      - LOAD_INITIAL_DATA=true # O false si no quieres cargar datos iniciales
+      
+    expose:
+      - "8003" # Puerto interno que usa el servicio
+    networks:
+      - pcbuilder_net
+    # depends_on: # Añadir dependencia si usa una base de datos
+      # - component-db # Ejemplo
+
+
+#  # --- Servicio de Precios ---
+  pricing-service:
+    build:
+      context: ../../services/pricing
+      dockerfile: Dockerfile
+    image: pricing-service-dev
+    container_name: pricing-service-container
+    env_file:
+      - ./.env # Para variables como RABBITMQ_URL, COMPONENT_SERVICE_URL
+    environment:
+      # Pasa URLs de otros servicios que necesita
+      - COMPONENT_SERVICE_URL=http://component-service:8003
+      - PRICES_DATABASE_URL=${PRICES_DATABASE_URL}
+      - RABBITMQ_URL=${RABBITMQ_URL}
+      # Pasa cualquier otra variable necesaria desde .env
+      # - DATABASE_URL=${PRICING_DATABASE_URL} # Si guarda en DB
+      # - RABBITMQ_URL=${RABBITMQ_URL} # Si usa RabbitMQ
+    expose:
+      - "8005" # Puerto interno que usa el servicio
+    networks:
+      - pcbuilder_net
+    depends_on:
+      - component-service # Depende de components para obtener nombres
+      - rabbitmq
+
+
+
+  rabbitmq:
+    image: rabbitmq:3.11-management # Imagen oficial con UI de gestión
+    container_name: rabbitmq-container
+    hostname: rabbitmq # Nombre de host dentro de la red docker
+    ports:
+      - "5672:5672"   # Puerto estándar AMQP para comunicación entre servicios
+      - "15672:15672" # Puerto para la interfaz web de gestión (accede en http://localhost:15672)
+    environment:
+      # Credenciales por defecto (cámbialas en producción)
+      - RABBITMQ_DEFAULT_USER=guest 
+      - RABBITMQ_DEFAULT_PASS=guest
+    networks:
+      - pcbuilder_net
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq # Volumen para persistir datos (opcional para dev)
+
+
+
 # --- Red Compartida ---
 networks:
   pcbuilder_net:
     driver: bridge
+
+# VOLUMENES DE PERSISTENCIA DE DATOS
+volumes:
+  rabbitmq_data: 
+    driver: local # (Opcional, 'local' es el default)

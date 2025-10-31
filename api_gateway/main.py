@@ -1,4 +1,5 @@
 # main.py - API Gateway principal
+import json
 from fastapi import FastAPI, Depends, HTTPException, Request, status, Header, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -15,7 +16,7 @@ import schemas
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
-
+from fastapi.responses import JSONResponse
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -408,49 +409,68 @@ async def proxy_get_comments(post_id: int):
 
 
 
-
 @app.get("/components")
-async def get_components(category: Optional[str] = None, brand: Optional[str] = None, limit: int = 50, offset: int = 0):
-    params = {"limit": limit, "offset": offset}
-    if category:
-        params["category"] = category
-    if brand:
-        params["brand"] = brand
+async def get_components(request: Request): # Cambia los parámetros a solo 'request'
+    params = request.query_params # Obtén los query params desde el request
         
     async with httpx.AsyncClient() as client:
         try:
+            # === CORRECCIÓN AQUÍ ===
+            # 1. Añade la barra al final de la URL -> "/components/"
+            # 2. Añade follow_redirects=True por robustez
             response = await client.get(
-                f"{SERVICE_CONFIG['component']}/components",
-                params=params,
-                timeout=30.0
+                f"{SERVICE_CONFIG['component']}/components/", # <-- AÑADIR BARRA AL FINAL
+                params=params, # Pasar los query params
+                timeout=30.0,
+                follow_redirects=True # <-- AÑADIR ESTO
             )
+            # =======================
+            
+            # Lanza un error si la respuesta del servicio fue 4xx o 5xx
+            response.raise_for_status() 
+            
+            # Devuelve el JSON si todo salió bien
+            # Usar JSONResponse asegura el tipo de contenido correcto
             return JSONResponse(status_code=response.status_code, content=response.json())
-        except Exception as e:
+
+        except httpx.HTTPStatusError as e:
+            # Si el servicio devuelve un error (ej. 404, 500), reenvíalo
+            try:
+                detail = e.response.json()
+            except json.JSONDecodeError:
+                detail = e.response.text # Fallback si el error no es JSON
+            raise HTTPException(status_code=e.response.status_code, detail=detail)
+        
+        except (httpx.RequestError, json.JSONDecodeError) as e:
+            # Capturar errores de conexión (ej. "All connection attempts failed")
+            # o si la respuesta 200 no fue JSON (como el 307)
             logger.error(f"Get components error: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Component service unavailable"
+                detail="Component service unavailable or returned invalid response"
             )
             
-            
-            
-            
-
 @app.get("/components/{component_id}")
-async def get_component(component_id: str):
+async def get_component(component_id: int): # Usar int si el ID es numérico
+    service_url = SERVICE_CONFIG['component']
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(
-                f"{SERVICE_CONFIG['component']}/components/{component_id}",
+                f"{service_url}/components/{component_id}",
                 timeout=30.0
             )
-            return JSONResponse(status_code=response.status_code, content=response.json())
+            # Manejar 404 del servicio
+            if response.status_code == 404:
+                 raise HTTPException(status_code=404, detail="Component not found")
+            response.raise_for_status() # Lanza excepción para otros errores >= 400
+            return response.json()
         except Exception as e:
             logger.error(f"Get component error: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Component service unavailable"
             )
+
 
 @app.post("/compatibility/check")
 async def check_compatibility(components: List[Dict[str, str]]):
@@ -507,26 +527,50 @@ async def get_saved_builds(token_data: Dict = Depends(verify_token)):
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Build service unavailable"
             )
-
+            
+            
 @app.get("/prices/{component_id}")
-async def get_component_prices(component_id: str, country: Optional[str] = None):
-    params = {}
-    if country:
-        params["country"] = country
-        
+async def get_component_prices(component_id: int, request: Request): # Usar int, pasar request
+    service_url = SERVICE_CONFIG['price']
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(
-                f"{SERVICE_CONFIG['price']}/prices/{component_id}",
-                params=params,
+                f"{service_url}/prices/{component_id}",
+                params=request.query_params, # Reenvía query params (ej. country)
                 timeout=30.0
             )
-            return JSONResponse(status_code=response.status_code, content=response.json())
+            response.raise_for_status()
+            return response.json()
         except Exception as e:
             logger.error(f"Get prices error: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Price service unavailable"
+            )
+            
+            
+            
+            
+@app.post("/prices/refresh", status_code=202)
+async def trigger_price_refresh(request_body: Dict[str, List[Any]]): # Espera {"component_ids": [...], "countries": [...]}
+    service_url = SERVICE_CONFIG['price']
+    async with httpx.AsyncClient() as client:
+        try:
+            # Reenvía el body al servicio de pricing
+            response = await client.post(
+                f"{service_url}/prices/refresh",
+                json=request_body,
+                timeout=10.0 # Timeout corto, es una tarea de fondo
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+             raise HTTPException(status_code=e.response.status_code, detail=e.response.json())
+        except Exception as e:
+            logger.error(f"Trigger price refresh error: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Pricing service unavailable"
             )
 
 @app.post("/benchmark/estimate")

@@ -6,12 +6,13 @@ import 'package:my_app/providers/auth_provider.dart';
 import 'package:my_app/core/api/api_client.dart'; // Necesario para AppTopBar
 import 'package:my_app/models/posts.dart'; // Necesario para AppTopBar
 import 'package:my_app/models/search_results.dart'; // Necesario para AppTopBar
-
+import '../shared/glass_card.dart';
+import '../shared/animated_glow_background.dart';
 // Importa los widgets que extrajiste
 import 'app_sidebar.dart';
 import 'app_drawer.dart';
-import 'app_top_bar.dart';
-// Importa los modales si son necesarios globalmente
+import 'app_top_bar.dart'; // Importa los modales si son necesarios globalmente
+
 // import 'package:my_app/core/widgets/create_post_modal.dart';
 // import 'package:my_app/core/widgets/comments_modal.dart';
 

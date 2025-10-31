@@ -16,7 +16,7 @@ def save_custom_build(db: Session, build: schemas.BuildCreate):
         description=build.description,
         components=components_json,
         total_price=total_price,
-        currency="USD",  # Temporal
+        currency="MXN",  # Temporal
         use_case=build.use_case,
         country_code=build.country_code,
         is_public=build.is_public,
