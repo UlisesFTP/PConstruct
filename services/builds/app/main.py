@@ -1,122 +1,171 @@
-from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, status, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-from . import models, schemas, crud, algorithms
-from .database import SessionLocal, engine
-from .dependencies import get_component_service, get_pricing_service, get_benchmark_service
-from .config import settings
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List, Optional
 import logging
-import httpx
 
-# Configuración inicial
+from .database import get_db, init_db
+from . import crud, schemas, models
+
+logger = logging.getLogger("build-service")
+logging.basicConfig(level=logging.INFO)
+
+
 app = FastAPI(
     title="Build Service",
-    description="Microservicio para gestión de builds y generación de recomendaciones",
-    version="1.0.0"
+    description="Servicio para crear y consultar builds de PC de usuarios y de la comunidad",
+    version="0.1.0",
 )
-logger = logging.getLogger("build-service")
 
-# Middleware CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # en prod puedes cerrar esto
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Crear tablas al iniciar
+
 @app.on_event("startup")
-def startup():
-    models.Base.metadata.create_all(bind=engine)
-    logger.info("Database tables created")
+async def on_startup():
+    await init_db()
+    logger.info("Build service inicializado y tablas aseguradas")
 
-# Dependencia de base de datos
-def get_db():
-    db = SessionLocal()
+
+def build_to_summary(b: models.Build) -> schemas.BuildSummary:
+    return schemas.BuildSummary(
+        id=b.id,
+        user_id=b.user_id,
+        name=b.name,
+        description=b.description,
+        is_public=b.is_public,
+        created_at=b.created_at,
+        updated_at=b.updated_at,
+    )
+
+
+def build_to_detail(b: models.Build) -> schemas.BuildDetail:
+    return schemas.BuildDetail(
+        id=b.id,
+        user_id=b.user_id,
+        name=b.name,
+        description=b.description,
+        is_public=b.is_public,
+        created_at=b.created_at,
+        updated_at=b.updated_at,
+        components=[
+            schemas.BuildComponentOut(
+                id=c.id,
+                slot=c.slot,
+                component_id=c.component_id,
+            )
+            for c in (b.components or [])
+        ],
+    )
+
+
+def get_user_id_from_request(request: Request) -> int:
+    raw = request.headers.get("X-User-Id")
+    if not raw:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Falta el header X-User-Id",
+        )
     try:
-        yield db
-    finally:
-        db.close()
+        return int(raw)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Header X-User-Id inválido",
+        )
 
-# Endpoints
-@app.post("/builds/generate", response_model=schemas.Build)
-async def generate_build(
-    build_request: schemas.BuildRequest,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    component_service: str = Depends(get_component_service),
-    pricing_service: str = Depends(get_pricing_service),
-    benchmark_service: str = Depends(get_benchmark_service)
+
+@app.post(
+    "/builds/",
+    response_model=schemas.BuildDetail,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_build_endpoint(
+    build_in: schemas.BuildCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
 ):
-    """Generar una nueva build recomendada"""
-    # Generar la build usando el algoritmo
-    build = await algorithms.build_generator.generate_build(
-        db=db,
-        build_request=build_request,
-        component_service_url=component_service,
-        pricing_service_url=pricing_service,
-        benchmark_service_url=benchmark_service
-    )
-    
-    # Guardar la build en segundo plano
-    background_tasks.add_task(
-        crud.save_generated_build,
-        db=db,
-        build_data=build.dict(),
-        user_id=build_request.user_id
-    )
-    
-    return build
+    user_id = get_user_id_from_request(request)
 
-@app.post("/builds/save", response_model=schemas.Build)
-def save_build(
-    build: schemas.BuildCreate,
-    db: Session = Depends(get_db)
+    new_build = await crud.create_build(db, user_id=user_id, build_in=build_in)
+    if not new_build:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No se pudo crear la build",
+        )
+
+    return build_to_detail(new_build)
+
+
+@app.get(
+    "/builds/{build_id}",
+    response_model=schemas.BuildDetail,
+    status_code=status.HTTP_200_OK,
+)
+async def get_build_detail_endpoint(
+    build_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
 ):
-    """Guardar una build personalizada"""
-    return crud.save_custom_build(db=db, build=build)
+    build_obj = await crud.get_build_by_id(db, build_id)
+    if not build_obj:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Build no encontrada",
+        )
 
-@app.get("/builds/user/{user_id}", response_model=list[schemas.Build])
-def get_user_builds(user_id: int, db: Session = Depends(get_db)):
-    """Obtener builds de un usuario"""
-    return crud.get_user_builds(db, user_id=user_id)
+    requester_id: Optional[int] = None
+    raw_header = request.headers.get("X-User-Id")
+    if raw_header:
+        try:
+            requester_id = int(raw_header)
+        except ValueError:
+            requester_id = None
 
-@app.get("/builds/{build_id}", response_model=schemas.Build)
-def get_build(build_id: int, db: Session = Depends(get_db)):
-    """Obtener detalles de una build específica"""
-    build = crud.get_build(db, build_id=build_id)
-    if not build:
-        raise HTTPException(status_code=404, detail="Build not found")
-    return build
+    if not build_obj.is_public:
+        if requester_id is None or requester_id != build_obj.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tienes acceso a esta build",
+            )
 
-@app.post("/builds/optimize", response_model=schemas.Build)
-async def optimize_build(
-    optimization_request: schemas.OptimizationRequest,
-    db: Session = Depends(get_db),
-    component_service: str = Depends(get_component_service),
-    pricing_service: str = Depends(get_pricing_service)
+    return build_to_detail(build_obj)
+
+
+@app.get(
+    "/builds/mine",
+    response_model=List[schemas.BuildSummary],
+    status_code=status.HTTP_200_OK,
+)
+async def get_my_builds_endpoint(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
 ):
-    """Optimizar una build existente"""
-    return await algorithms.optimizer.optimize_build(
-        db=db,
-        optimization_request=optimization_request,
-        component_service_url=component_service,
-        pricing_service_url=pricing_service
-    )
+    user_id = get_user_id_from_request(request)
 
-@app.get("/builds/recommendations", response_model=list[schemas.Build])
-async def get_recommendations(
-    user_id: int,
-    db: Session = Depends(get_db),
-    component_service: str = Depends(get_component_service)
+    builds = await crud.get_builds_by_user(db, user_id=user_id)
+    return [build_to_summary(b) for b in builds]
+
+
+@app.get(
+    "/builds/community",
+    response_model=List[schemas.BuildSummary],
+    status_code=status.HTTP_200_OK,
+)
+async def get_community_builds_endpoint(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Obtener builds recomendadas basadas en preferencias"""
-    return await algorithms.build_generator.get_recommendations(
-        db=db,
-        user_id=user_id,
-        component_service_url=component_service
-    )
+    builds = await crud.get_community_builds(db, skip=skip, limit=limit)
+    return [build_to_summary(b) for b in builds]
+
 
 @app.get("/health")
-def health_check():
-    return {"status": "healthy"}
+async def healthcheck():
+    return {"status": "ok", "service": "build-service"}

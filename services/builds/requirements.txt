@@ -1,13 +1,9 @@
 # requirements.txt para services/builds
-
 fastapi
 uvicorn[standard]
-
 sqlalchemy
-psycopg2-binary
-
+asyncpg
 pydantic
 pydantic-settings
-
 httpx
 python-dotenv

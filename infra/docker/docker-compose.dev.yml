@@ -50,7 +50,7 @@ services:
       - USER_SERVICE_URL=http://user-service:8001
       - POSTS_SERVICE_URL=http://posts-service:8002
       - COMPONENT_SERVICE_URL=http://component-service:8003 # Añadir/Verificar
-      #- BUILD_SERVICE_URL=http://build-service:8004 # Añadir/Verificar
+      - BUILD_SERVICE_URL=http://build-service:8004 # Añadir/Verificar
       - PRICE_SERVICE_URL=http://pricing-service:8005 # ¡Añadir!
      # - BENCHMARK_SERVICE_URL=http://benchmark-service:8006 # Añ
       - JWT_SECRET=${JWT_SECRET} # Esta es la que usa tu api_gateway/jwt_utils.py
@@ -63,6 +63,8 @@ services:
       - posts-service
       - component-service 
       - pricing-service
+      - build-service
+      # - benchmark-service
       - rabbitmq
     networks:
       - pcbuilder_net
@@ -133,6 +135,25 @@ services:
       - rabbitmq
 
 
+
+  build-service:
+    build:
+      context: ../../services/builds
+      dockerfile: Dockerfile
+    image: build-service-dev
+    container_name: build-service-container
+    env_file:
+      - ./.env
+    environment:
+      - BUILDS_DATABASE_URL=${BUILDS_DATABASE_URL}
+      - COMPONENT_SERVICE_URL=http://component-service:8003
+      - RABBITMQ_URL=${RABBITMQ_URL}
+      - PRICE_SERVICE_URL=http://pricing-service:8005
+    expose:
+      - "8004"
+    networks:
+      - pcbuilder_net
+ 
 
   rabbitmq:
     image: rabbitmq:3.11-management # Imagen oficial con UI de gestión

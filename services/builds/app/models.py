@@ -1,25 +1,31 @@
-from sqlalchemy import Column, Integer, String, JSON, Float, ForeignKey, DateTime
-from sqlalchemy.orm import relationship, declarative_base
-from sqlalchemy.sql import func
-import datetime
-
-Base = declarative_base()
+from sqlalchemy import Column, Integer, String, Boolean, Text, DateTime, ForeignKey, func
+from sqlalchemy.orm import relationship
+from .database import Base
 
 class Build(Base):
-    __tablename__ = "builds"
-    
+    __tablename__ = "user_builds"
+
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, index=True)  # 0 para builds públicas/genéricas
-    name = Column(String(100))
-    description = Column(String(500))
-    components = Column(JSON, nullable=False)  # Lista de IDs de componentes
-    total_price = Column(Float)
-    currency = Column(String(3), default="USD")
-    use_case = Column(String(50))  # gaming, editing, etc.
-    country_code = Column(String(2))
-    estimated_performance = Column(JSON)  # Resultados de benchmarks
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
-    is_public = Column(Boolean, default=True)
-    is_custom = Column(Boolean, default=False)  # True para builds personalizadas
-    likes = Column(Integer, default=0)
+    user_id = Column(Integer, index=True, nullable=False)
+    name = Column(String(200), nullable=False)
+    description = Column(Text)
+    is_public = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    components = relationship(
+        "BuildComponent",
+        back_populates="build",
+        cascade="all, delete-orphan",
+        lazy="selectin"
+    )
+
+class BuildComponent(Base):
+    __tablename__ = "build_components"
+
+    id = Column(Integer, primary_key=True, index=True)
+    build_id = Column(Integer, ForeignKey("user_builds.id", ondelete="CASCADE"), nullable=False, index=True)
+    slot = Column(String(50), nullable=False)
+    component_id = Column(Integer, nullable=False)
+
+    build = relationship("Build", back_populates="components")

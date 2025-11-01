@@ -489,6 +489,103 @@ async def check_compatibility(components: List[Dict[str, str]]):
                 detail="Component service unavailable"
             )
 
+
+
+def extract_user_id_from_authorization(authorization: str | None) -> int:
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Falta Authorization header",
+        )
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Formato de Authorization inválido",
+        )
+    token = authorization.split(" ", 1)[1]
+    payload = verify_token(token)
+    user_id = payload.get("user_id") or payload.get("id") or payload.get("sub")
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token sin user_id",
+        )
+    try:
+        return int(user_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="user_id inválido en token",
+        )
+
+
+@app.post("/builds", status_code=201)
+async def create_build_proxy(
+    request: Request,
+    authorization: str = Header(None),
+):
+    user_id = extract_user_id_from_authorization(authorization)
+    body = await request.json()
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{SERVICE_CONFIG['build']}/builds/",
+            json=body,
+            headers={"X-User-Id": str(user_id)},
+            timeout=10.0,
+        )
+
+    return JSONResponse(
+        status_code=resp.status_code,
+        content=resp.json(),
+    )
+
+
+@app.get("/builds/{build_id}")
+async def get_build_detail_proxy(
+    build_id: int,
+    authorization: str = Header(None),
+):
+    headers = {}
+    if authorization:
+        try:
+            uid = extract_user_id_from_authorization(authorization)
+            headers["X-User-Id"] = str(uid)
+        except HTTPException:
+            pass
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{SERVICE_CONFIG['build']}/builds/{build_id}",
+            headers=headers,
+            timeout=10.0,
+        )
+
+    return JSONResponse(
+        status_code=resp.status_code,
+        content=resp.json() if resp.content else None,
+    )
+
+
+@app.get("/builds/mine")
+async def get_my_builds_proxy(
+    authorization: str = Header(None),
+):
+    user_id = extract_user_id_from_authorization(authorization)
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{SERVICE_CONFIG['build']}/builds/mine",
+            headers={"X-User-Id": str(user_id)},
+            timeout=10.0,
+        )
+
+    return JSONResponse(
+        status_code=resp.status_code,
+        content=resp.json(),
+    )
+
+
 @app.post("/builds/recommend")
 async def recommend_build(requirements: Dict[str, Any], token_data: Optional[Dict] = Depends(lambda: None)):
     headers = {}

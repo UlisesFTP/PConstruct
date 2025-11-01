@@ -1,50 +1,40 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, ConfigDict
+from typing import List, Optional
 from datetime import datetime
 
-class BuildComponent(BaseModel):
+class BuildComponentInput(BaseModel):
+    slot: str
     component_id: int
-    quantity: int = 1
-
-class BuildRequest(BaseModel):
-    budget: float
-    currency: str = "USD"
-    use_case: str  # Enum: gaming, streaming, engineering, programming, ai
-    country_code: str
-    user_id: Optional[int] = None
-    existing_components: Optional[List[int]] = None
-    preferred_brands: Optional[Dict[str, str]] = None  # {"CPU": "AMD", "GPU": "NVIDIA"}
 
 class BuildCreate(BaseModel):
-    user_id: int
     name: str
     description: Optional[str] = None
-    components: List[BuildComponent]
-    use_case: str
-    country_code: str
-    is_public: bool = True
+    is_public: bool = False
+    components: List[BuildComponentInput]
 
-class Build(BaseModel):
+class BuildComponentOut(BaseModel):
+    id: int
+    slot: str
+    component_id: int
+    model_config = ConfigDict(from_attributes=True)
+
+class BuildSummary(BaseModel):
     id: int
     user_id: int
     name: str
-    description: Optional[str]
-    components: List[Dict]  # Detalles completos de componentes
-    total_price: float
-    currency: str
-    use_case: str
-    country_code: str
-    estimated_performance: Optional[Dict[str, Any]] = None
+    description: Optional[str] = None
+    is_public: bool
     created_at: datetime
     updated_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class BuildDetail(BaseModel):
+    id: int
+    user_id: int
+    name: str
+    description: Optional[str] = None
     is_public: bool
-    likes: int
-
-    class Config:
-        orm_mode = True
-
-class OptimizationRequest(BaseModel):
-    build_id: int
-    budget_change: float = 0  # Aumento o reducción de presupuesto
-    performance_target: Optional[str] = None  # Ej: "60fps@4k"
-    component_replacements: Optional[Dict[int, int]] = None  # {old_id: new_id}
+    created_at: datetime
+    updated_at: datetime
+    components: List[BuildComponentOut]
+    model_config = ConfigDict(from_attributes=True)

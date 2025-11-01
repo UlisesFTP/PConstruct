@@ -1,54 +1,68 @@
-from sqlalchemy.orm import Session
+from typing import List, Optional
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+from sqlalchemy.ext.asyncio import AsyncSession
 from . import models, schemas
-import uuid
-import json
 
-def save_custom_build(db: Session, build: schemas.BuildCreate):
-    # Convertir componentes a JSON
-    components_json = [comp.dict() for comp in build.components]
-    
-    # Calcular precio total (se actualizará después con datos reales)
-    total_price = sum(comp.get("price", 0) * comp["quantity"] for comp in components_json)
-    
-    db_build = models.Build(
-        user_id=build.user_id,
-        name=build.name,
-        description=build.description,
-        components=components_json,
-        total_price=total_price,
-        currency="MXN",  # Temporal
-        use_case=build.use_case,
-        country_code=build.country_code,
-        is_public=build.is_public,
-        is_custom=True
-    )
-    
-    db.add(db_build)
-    db.commit()
-    db.refresh(db_build)
-    return db_build
-
-def save_generated_build(db: Session, build_data: dict, user_id: int):
-    """Guardar una build generada por el sistema"""
-    db_build = models.Build(
+async def create_build(db: AsyncSession, user_id: int, build_in: schemas.BuildCreate) -> models.Build:
+    build = models.Build(
         user_id=user_id,
-        name=build_data.get("name", "Generated Build"),
-        description=build_data.get("description", "Automatically generated build"),
-        components=build_data["components"],
-        total_price=build_data["total_price"],
-        currency=build_data["currency"],
-        use_case=build_data["use_case"],
-        country_code=build_data["country_code"],
-        estimated_performance=build_data.get("estimated_performance"),
-        is_public=True,
-        is_custom=False
+        name=build_in.name,
+        description=build_in.description,
+        is_public=build_in.is_public,
     )
-    
-    db.add(db_build)
-    db.commit()
+    db.add(build)
+    await db.flush()
 
-def get_build(db: Session, build_id: int):
-    return db.query(models.Build).filter(models.Build.id == build_id).first()
+    for comp in build_in.components:
+        db.add(
+            models.BuildComponent(
+                build_id=build.id,
+                slot=comp.slot,
+                component_id=comp.component_id,
+            )
+        )
 
-def get_user_builds(db: Session, user_id: int):
-    return db.query(models.Build).filter(models.Build.user_id == user_id).all()
+    await db.commit()
+
+    query = (
+        select(models.Build)
+        .options(selectinload(models.Build.components))
+        .where(models.Build.id == build.id)
+    )
+    result = await db.execute(query)
+    created_build = result.scalars().first()
+    return created_build
+
+async def get_build_by_id(db: AsyncSession, build_id: int) -> Optional[models.Build]:
+    query = (
+        select(models.Build)
+        .options(selectinload(models.Build.components))
+        .where(models.Build.id == build_id)
+    )
+    result = await db.execute(query)
+    return result.scalars().first()
+
+async def get_builds_by_user(db: AsyncSession, user_id: int) -> List[models.Build]:
+    query = (
+        select(models.Build)
+        .where(models.Build.user_id == user_id)
+        .order_by(models.Build.created_at.desc())
+    )
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+async def get_community_builds(
+    db: AsyncSession,
+    skip: int = 0,
+    limit: int = 20,
+) -> List[models.Build]:
+    query = (
+        select(models.Build)
+        .where(models.Build.is_public.is_(True))
+        .order_by(models.Build.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    result = await db.execute(query)
+    return list(result.scalars().all())
