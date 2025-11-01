@@ -17,6 +17,8 @@ import cloudinary
 import cloudinary.uploader
 import cloudinary.api
 from fastapi.responses import JSONResponse
+from fastapi import APIRouter
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -519,6 +521,9 @@ def extract_user_id_from_authorization(authorization: str | None) -> int:
         )
 
 
+
+
+
 @app.post("/builds", status_code=201)
 async def create_build_proxy(
     request: Request,
@@ -539,6 +544,25 @@ async def create_build_proxy(
         status_code=resp.status_code,
         content=resp.json(),
     )
+
+
+@app.get("/builds/community")
+async def get_community_builds_proxy(
+    skip: int = 0,
+    limit: int = 20,
+):
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{SERVICE_CONFIG['build']}/builds/community",
+            params={"skip": skip, "limit": limit},
+            timeout=10.0,
+        )
+    return JSONResponse(
+        status_code=resp.status_code,
+        content=resp.json(),
+    )
+
+
 
 
 @app.get("/builds/{build_id}")
