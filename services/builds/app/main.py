@@ -80,6 +80,42 @@ def get_user_id_from_request(request: Request) -> int:
         )
 
 
+@app.get(
+    "/builds/community",
+    response_model=List[schemas.BuildSummary],
+    status_code=status.HTTP_200_OK,
+)
+async def get_community_builds_endpoint(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    builds = await crud.get_community_builds(db, skip=skip, limit=limit)
+    return [build_to_summary(b) for b in builds]
+
+
+@app.get("/health")
+async def healthcheck():
+    return {"status": "ok", "service": "build-service"}
+
+
+
+
+@app.get(
+    "/builds/mine",
+    response_model=List[schemas.BuildSummary],
+    status_code=status.HTTP_200_OK,
+)
+async def get_my_builds_endpoint(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    user_id = get_user_id_from_request(request)
+
+    builds = await crud.get_builds_by_user(db, user_id=user_id)
+    return [build_to_summary(b) for b in builds]
+
+
 @app.post(
     "/builds/",
     response_model=schemas.BuildDetail,
@@ -100,6 +136,7 @@ async def create_build_endpoint(
         )
 
     return build_to_detail(new_build)
+
 
 
 @app.get(
@@ -136,36 +173,3 @@ async def get_build_detail_endpoint(
 
     return build_to_detail(build_obj)
 
-
-@app.get(
-    "/builds/mine",
-    response_model=List[schemas.BuildSummary],
-    status_code=status.HTTP_200_OK,
-)
-async def get_my_builds_endpoint(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    user_id = get_user_id_from_request(request)
-
-    builds = await crud.get_builds_by_user(db, user_id=user_id)
-    return [build_to_summary(b) for b in builds]
-
-
-@app.get(
-    "/builds/community",
-    response_model=List[schemas.BuildSummary],
-    status_code=status.HTTP_200_OK,
-)
-async def get_community_builds_endpoint(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
-    db: AsyncSession = Depends(get_db),
-):
-    builds = await crud.get_community_builds(db, skip=skip, limit=limit)
-    return [build_to_summary(b) for b in builds]
-
-
-@app.get("/health")
-async def healthcheck():
-    return {"status": "ok", "service": "build-service"}
