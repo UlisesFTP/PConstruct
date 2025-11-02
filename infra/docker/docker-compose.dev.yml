@@ -49,11 +49,11 @@ services:
     environment:
       - USER_SERVICE_URL=http://user-service:8001
       - POSTS_SERVICE_URL=http://posts-service:8002
-      - COMPONENT_SERVICE_URL=http://component-service:8003 # Añadir/Verificar
-      - BUILD_SERVICE_URL=http://build-service:8004 # Añadir/Verificar
-      - PRICE_SERVICE_URL=http://pricing-service:8005 # ¡Añadir!
-     # - BENCHMARK_SERVICE_URL=http://benchmark-service:8006 # Añ
-      - JWT_SECRET=${JWT_SECRET} # Esta es la que usa tu api_gateway/jwt_utils.py
+      - COMPONENT_SERVICE_URL=http://component-service:8003
+      - BUILDS_SERVICE_URL=http://build-service:8004
+      - PRICING_SERVICE_URL=http://pricing-service:8005
+      # - BENCHMARK_SERVICE_URL=http://benchmark-service:8006
+      - JWT_SECRET=${JWT_SECRET}
       # Cloudinary vars se cargarán automáticamente desde el env_file
       - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
       - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
