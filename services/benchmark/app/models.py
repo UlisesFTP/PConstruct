@@ -1,24 +1,18 @@
-from sqlalchemy import Column, Integer, String, JSON, Float, ForeignKey, DateTime
-from sqlalchemy.orm import declarative_base
-from sqlalchemy.sql import func
-import datetime
+from sqlalchemy import Column, Integer, String
+from .database import Base
 
-Base = declarative_base()
+class SoftwareRequirement(Base):
+    __tablename__ = "software_requirements"
 
-class BenchmarkResult(Base):
-    __tablename__ = "benchmark_results"
-    
     id = Column(Integer, primary_key=True, index=True)
-    build_id = Column(Integer, index=True)  # Referencia a build en servicio de builds
-    use_case = Column(String(50))
-    results = Column(JSON)  # Almacena los resultados de la estimación
-    created_at = Column(DateTime, default=func.now())
+    name = Column(String(100), nullable=False)           # "Cyberpunk 2077", "Blender"
+    scenario = Column(String(100), nullable=False)       # "1440p Ultra", "Render Cycles Monster Scene"
+    type = Column(String(50), nullable=False)            # "game" | "software"
 
-class ComparisonResult(Base):
-    __tablename__ = "comparison_results"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    build_ids = Column(JSON)  # Lista de IDs de builds
-    scenario = Column(String(50))
-    results = Column(JSON)  # Resultados completos de la comparación
-    created_at = Column(DateTime, default=func.now())
+    # mínimos jugable
+    min_cpu_score = Column(Integer, nullable=False)
+    min_gpu_score = Column(Integer, nullable=False)
+
+    # recomendados / high
+    rec_cpu_score = Column(Integer, nullable=False)
+    rec_gpu_score = Column(Integer, nullable=False)

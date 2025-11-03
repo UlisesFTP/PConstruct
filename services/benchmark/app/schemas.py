@@ -1,27 +1,31 @@
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Literal
 
-class EstimateRequest(BaseModel):
-    component_ids: List[int]
-    use_case: str  # gaming, engineering, etc.
-    resolution: str = "1080p"  # 1080p, 1440p, 4K
-    settings: str = "ultra"  # low, medium, high, ultra
-
-class BenchmarkResult(BaseModel):
-    fps: Dict[str, float]  # Ej: {"average": 120, "min": 90, "max": 150}
-    score: float  # Puntaje general
-    details: Dict[str, Any]  # Resultados específicos por juego/aplicación
-
-class ComparisonResult(BaseModel):
-    scenario: str
-    results: List[Dict]  # Lista de resultados por build
-
-class BenchmarkHistory(BaseModel):
+class SoftwareRequirementOut(BaseModel):
     id: int
-    build_id: int
-    use_case: str
-    results: Dict[str, Any]
-    created_at: str
+    name: str
+    scenario: str
+    type: Literal["game", "software"]
+    min_cpu_score: int
+    min_gpu_score: int
+    rec_cpu_score: int
+    rec_gpu_score: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True  # pydantic v2 equivalente a orm_mode=True
+
+
+class BenchmarkEstimateRequest(BaseModel):
+    # por ahora asumimos que el gateway nos manda ids de componentes (los de components-service)
+    component_ids: List[int]
+
+
+class SoftwarePerformanceResult(BaseModel):
+    software_name: str
+    scenario: str
+    tier: Literal["unplayable", "playable", "recommended"]
+    notes: str
+
+
+class BenchmarkEstimateResponse(BaseModel):
+    results: List[SoftwarePerformanceResult]

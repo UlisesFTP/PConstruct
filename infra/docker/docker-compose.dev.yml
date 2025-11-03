@@ -17,7 +17,7 @@ services:
 
     # Pasa las variables al contenedor
     environment:
-      - DATABASE_URL=${DATABASE_URL}
+      - USERS_DATABASE_URL=${USERS_DATABASE_URL}
       - SECRET_KEY=${SECRET_KEY} # Nota: 'SECRET_KEY' y 'JWT_SECRET' son dos nombres diferentes. Asegúrate de usar el mismo en tu código.
       - ALGORITHM=${ALGORITHM}
       - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
@@ -52,7 +52,7 @@ services:
       - COMPONENT_SERVICE_URL=http://component-service:8003
       - BUILDS_SERVICE_URL=http://build-service:8004
       - PRICING_SERVICE_URL=http://pricing-service:8005
-      # - BENCHMARK_SERVICE_URL=http://benchmark-service:8006
+      - BENCHMARK_SERVICE_URL=http://benchmark-service:8006
       - JWT_SECRET=${JWT_SECRET}
       # Cloudinary vars se cargarán automáticamente desde el env_file
       - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
@@ -64,7 +64,7 @@ services:
       - component-service 
       - pricing-service
       - build-service
-      # - benchmark-service
+      - benchmark-service
       - rabbitmq
     networks:
       - pcbuilder_net
@@ -154,6 +154,29 @@ services:
     networks:
       - pcbuilder_net
  
+
+
+  benchmark-service:
+    build:
+      context: ../../services/benchmark
+      dockerfile: Dockerfile
+    image: benchmark-service-dev
+    container_name: benchmark-service-container
+    env_file:
+      - ./.env
+    environment:
+      - BENCHMARKS_DATABASE_URL=${BENCHMARKS_DATABASE_URL}
+      - COMPONENT_SERVICE_URL=http://component-service:8003
+    expose:
+      - "8006"
+    networks:
+      - pcbuilder_net
+    depends_on:
+      - component-service
+
+
+
+
 
   rabbitmq:
     image: rabbitmq:3.11-management # Imagen oficial con UI de gestión

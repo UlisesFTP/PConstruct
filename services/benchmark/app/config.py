@@ -1,10 +1,23 @@
-from pydantic_settings import BaseSettings
+import os
+from dotenv import load_dotenv
+from pathlib import Path
 
-class Settings(BaseSettings):
-    DATABASE_URL: str = "postgresql+asyncpg://user:password@benchmark-db:5432/benchmarkdb"
-    COMPONENT_SERVICE_URL: str = "http://component-service:8002"
-    BUILD_SERVICE_URL: str = "http://build-service:8003"
-    STEAM_API_KEY: str = ""
-    BLENDER_BENCHMARK_API: str = "https://opendata.blender.org/api/benchmark/"
+# Cargamos el mismo .env global que usan los otros servicios
+env_path = (
+    Path(__file__)
+    .parent          # app/
+    .parent          # benchmark/
+    .parent          # services/
+    .parent          # PConstruct/
+    / "infra"
+    / "docker"
+    / ".env"
+)
 
-settings = Settings()
+load_dotenv(dotenv_path=env_path)
+
+BENCHMARKS_DATABASE_URL = os.getenv("BENCHMARKS_DATABASE_URL")
+COMPONENTS_SERVICE_URL = os.getenv("COMPONENTS_SERVICE_URL", "http://component-service:8003")
+
+if not BENCHMARKS_DATABASE_URL:
+    raise ValueError("BENCHMARKS_DATABASE_URL no está definida en .env")

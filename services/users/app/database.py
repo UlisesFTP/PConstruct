@@ -8,7 +8,7 @@ from pathlib import Path
 # app -> users -> services -> PConstruct (raíz)
 env_path = Path(__file__).parent.parent.parent.parent / 'infra' / 'docker' / '.env'
 load_dotenv(dotenv_path=env_path)
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("USERS_DATABASE_URL")
 
 # Añadimos una verificación para asegurarnos de que la URL se cargó
 if not DATABASE_URL:
