@@ -1,6 +1,6 @@
-from pydantic import BaseModel
-from typing import List, Literal
-
+from typing_extensions import Literal
+from pydantic import BaseModel, Field, model_validator
+from typing import List, Optional
 class SoftwareRequirementOut(BaseModel):
     id: int
     name: str
@@ -14,11 +14,20 @@ class SoftwareRequirementOut(BaseModel):
     class Config:
         from_attributes = True  # pydantic v2 equivalente a orm_mode=True
 
+class ScenarioIn(BaseModel):
+    software_name: str
+    scenario: str
 
-class BenchmarkEstimateRequest(BaseModel):
-    # por ahora asumimos que el gateway nos manda ids de componentes (los de components-service)
-    component_ids: List[int]
 
+class EstimateRequest(BaseModel):
+    component_ids: Optional[List[int]] = None
+    build_id: Optional[int] = None
+
+    @model_validator(mode="after")
+    def check_any(self):
+        if not self.component_ids and self.build_id is None:
+            raise ValueError("Debes enviar 'component_ids' o 'build_id'.")
+        return self
 
 class SoftwarePerformanceResult(BaseModel):
     software_name: str

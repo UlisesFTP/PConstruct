@@ -157,22 +157,33 @@ services:
 
 
   benchmark-service:
-    build:
-      context: ../../services/benchmark
-      dockerfile: Dockerfile
-    image: benchmark-service-dev
-    container_name: benchmark-service-container
-    env_file:
-      - ./.env
-    environment:
-      - BENCHMARKS_DATABASE_URL=${BENCHMARKS_DATABASE_URL}
-      - COMPONENT_SERVICE_URL=http://component-service:8003
-    expose:
-      - "8006"
-    networks:
-      - pcbuilder_net
-    depends_on:
-      - component-service
+      build:
+        context: ../../services/benchmark
+        dockerfile: Dockerfile
+      image: benchmark-service-dev
+      container_name: benchmark-service-container
+      env_file:
+        - ./.env
+      environment:
+        BENCHMARKS_DATABASE_URL: ${BENCHMARKS_DATABASE_URL}
+        COMPONENT_SERVICE_URL: http://component-service:8003
+        BENCH_SCORES_SOURCE: "kaggle"            # "kaggle" | "csv" | "none"
+        BENCH_SCORES_CSV_PATH: "/data/gpu_scores.csv"   # usado si source=csv
+        KAGGLE_DATASET_SLUG: "alanjo/graphics-card-full-specs"   # ejemplo
+        KAGGLE_FILE_PATH: ""                     # si el dataset tiene varios archivos, pon el relativo aquí
+        BENCH_NAME_COL: "model"                  # columna nombre GPU
+        BENCH_SCORE_COL: "passmark_score"        # columna score (ajústalo al CSV real)
+        BUILDS_SERVICE_URL: "http://build-service:8004"
+        # --- Gemini ---
+        ENABLE_GEMINI_FALLBACK: "true"
+        GEMINI_API_KEY: "${GEMINI_API_KEY}"
+        GEMINI_MODEL: "gemini-2.5-flash"
+      expose:
+        - "8006"
+      networks:
+        - pcbuilder_net
+      depends_on:
+        - component-service
 
 
 

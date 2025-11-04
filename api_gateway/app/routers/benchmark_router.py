@@ -7,21 +7,24 @@ from app.config import SERVICE_CONFIG, logger
 router = APIRouter(prefix="/benchmark", tags=["benchmark"])
 
 @router.post("/estimate")
-async def estimate_performance(build: Dict[str, Any]):
+async def estimate_performance(build: dict):
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.post(
+            resp = await client.post(
                 f"{SERVICE_CONFIG['benchmark']}/benchmark/estimate",
                 json=build,
                 timeout=30.0
             )
-            return JSONResponse(status_code=response.status_code, content=response.json())
+            # Evita ValueError cuando 500 devuelve texto/HTML
+            try:
+                payload = resp.json()
+            except ValueError:
+                payload = {"error": True, "message": resp.text or "No content"}
+
+            return JSONResponse(status_code=resp.status_code, content=payload)
         except Exception as e:
-            logger.error(f"Benchmark estimation error: {str(e)}")
-            raise HTTPException(
-                status_code=503,
-                detail="Benchmark service unavailable"
-            )
+            logger.error(f"Benchmark estimation error: {e}")
+            raise HTTPException(status_code=503, detail="Benchmark service unavailable")
 
 @router.get("/compare")
 async def compare_builds(
