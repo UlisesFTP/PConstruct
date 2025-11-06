@@ -7,3 +7,4 @@ PyJWT
 python-jose[cryptography]
 passlib[bcrypt]
 cloudinary
+pydantic>=2.0

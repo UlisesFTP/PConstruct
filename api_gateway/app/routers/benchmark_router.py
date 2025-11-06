@@ -3,8 +3,16 @@ from fastapi.responses import JSONResponse
 from typing import Dict, Any, List, Optional
 import httpx
 from app.config import SERVICE_CONFIG, logger
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/benchmark", tags=["benchmark"])
+
+
+
+class CompareRequest(BaseModel):
+    build_ids: list[int]
+    scenario: Optional[str] = None
+
 
 @router.post("/estimate")
 async def estimate_performance(build: dict):
@@ -49,3 +57,14 @@ async def compare_builds(
                 status_code=503,
                 detail="Benchmark service unavailable"
             )
+
+
+@router.post("/compare")
+async def compare_builds_post(req: CompareRequest):
+    async with httpx.AsyncClient() as client:
+        r = await client.post(
+            f"{SERVICE_CONFIG['benchmark']}/benchmark/compare",
+            json=req.model_dump(),
+            timeout=30.0
+        )
+        return JSONResponse(status_code=r.status_code, content=r.json())

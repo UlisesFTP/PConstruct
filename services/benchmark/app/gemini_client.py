@@ -16,7 +16,7 @@ def _get_model():
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY no configurado")
     genai.configure(api_key=api_key)
-    model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     return genai.GenerativeModel(model_name)
 
 def estimate_score(model_name: str, known_scores: Dict[str,int]) -> Optional[Dict]:

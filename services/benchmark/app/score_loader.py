@@ -1,164 +1,199 @@
-# app/score_loader.py
-import os
-import csv
-import json
-import math
+from __future__ import annotations
+
+from asyncio.log import logger
 import logging
-from functools import lru_cache
-from typing import Dict, Optional, Tuple, List
+import os
+import re
+from pathlib import Path
+from typing import Dict, Tuple, Optional, List
 
 import pandas as pd
 
-logger = logging.getLogger("score-loader")
-logger.setLevel(logging.INFO)
 
-# Carga perezosa de kagglehub solo si se usa
-def _try_import_kagglehub():
-    try:
-        import kagglehub
-        from kagglehub import KaggleDatasetAdapter
-        return kagglehub, KaggleDatasetAdapter
-    except Exception as e:
-        logger.warning("kagglehub no disponible: %s", e)
-        return None, None
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
 
-def _norm(s: str) -> str:
-    s = (s or "").lower().strip()
-    # normalizaciones simples
-    for p in ["nvidia ", "geforce ", "rtx ", "gtx ", "radeon ", "amd ", "rx "]:
-        s = s.replace(p, " ")
-    s = " ".join(s.split())  # colapsa espacios
-    return s
 
-class ScoresStore:
-    def __init__(self):
-        self._scores: Dict[str, int] = {}  # nombre normalizado -> score
-        self.name_col = os.getenv("BENCH_NAME_COL", "model")
-        self.score_col = os.getenv("BENCH_SCORE_COL", "score")
 
-    def _put(self, name: str, score: int):
-        if not name:
-            return
-        key = _norm(name)
-        if key and score:
-            self._scores[key] = int(score)
 
-    def load(self):
-        source = os.getenv("BENCH_SCORES_SOURCE", "none").lower()
-        if source == "kaggle":
-            self._load_from_kaggle()
-        elif source == "csv":
-            path = os.getenv("BENCH_SCORES_CSV_PATH")
-            if not path or not os.path.exists(path):
-                logger.warning("CSV no encontrado en BENCH_SCORES_CSV_PATH=%s", path)
-            else:
-                self._load_from_csv(path)
-        else:
-            logger.info("Sin fuente de puntajes (BENCH_SCORES_SOURCE=%s).", source)
+# -------------------------------------------------------------------
+# Config desde ENV con defaults sensatos
+# -------------------------------------------------------------------
+BENCH_SCORES_SOURCE = os.getenv("BENCH_SCORES_SOURCE", "csv")
 
-        if not self._scores:
-            logger.warning("No hay scores cargados. Agregando seed mínimo para dev.")
-            # Seed mínimo para pruebas
-            seed = {
-                "geforce rtx 4090": 38550,
-                "geforce rtx 4080": 34910,
-                "geforce rtx 4070": 23200,
-                "geforce rtx 3060": 17050,
-                "radeon rx 7900 xt": 25458,
-            }
-            for k, v in seed.items():
-                self._scores[_norm(k)] = v
+CPU_BENCH_CSV_PATH = os.getenv("CPU_BENCH_CSV_PATH", "/code/data/CPU_BENCHMARK.csv")
+GPU_BENCH_CSV_PATH = os.getenv("GPU_BENCH_CSV_PATH", "/code/data/GPU_BENCHMARK.csv")
 
-        logger.info("Scores cargados: %d entradas", len(self._scores))
+CPU_NAME_COL  = os.getenv("CPU_NAME_COL", "auto")
+CPU_SCORE_COL = os.getenv("CPU_SCORE_COL", "auto")
+GPU_NAME_COL  = os.getenv("GPU_NAME_COL", "auto")
+GPU_SCORE_COL = os.getenv("GPU_SCORE_COL", "auto")
 
-    def _load_from_csv(self, path: str):
-        logger.info("Cargando CSV local: %s", path)
-        try:
-            df = pd.read_csv(path)
-        except Exception:
-            # fallback a CSV simple
-            rows = []
-            with open(path, newline="", encoding="utf-8") as f:
-                r = csv.DictReader(f)
-                rows = list(r)
-            df = pd.DataFrame(rows)
+# -------------------------------------------------------------------
+# Normalización de nombres
+# -------------------------------------------------------------------
+def _norm(x: str) -> str:
+    x = (x or "").strip().lower()
+    x = re.sub(r"\(.*?\)", "", x)
+    x = re.sub(r"[^a-z0-9\-\s\+\.]", " ", x)
+    x = re.sub(r"\s+", " ", x).strip()
+    return x
 
-        if self.name_col not in df.columns or self.score_col not in df.columns:
-            logger.warning("Columnas esperadas no presentes: %s, %s", self.name_col, self.score_col)
-            logger.warning("Columnas disponibles: %s", list(df.columns))
-        for _, row in df.iterrows():
-            name = str(row.get(self.name_col, "")).strip()
-            score = row.get(self.score_col, None)
-            if not name or pd.isna(score):
-                continue
-            try:
-                score = int(float(score))
-            except Exception:
-                continue
-            self._put(name, score)
+_VENDOR_PREFIX = re.compile(r"^(?:amd|intel|nvidia|asus|msi|gigabyte|evga|zotac)\s+", re.I)
 
-    def _load_from_kaggle(self):
-        slug = os.getenv("KAGGLE_DATASET_SLUG", "").strip()
-        file_path = os.getenv("KAGGLE_FILE_PATH", "").strip()
-        if not slug:
-            logger.error("KAGGLE_DATASET_SLUG vacío")
-            return
-        kagglehub, Adapter = _try_import_kagglehub()
-        if not kagglehub:
-            return
-        logger.info("Cargando dataset de Kaggle: %s (%s)", slug, file_path or "(auto)")
-        try:
-            df = kagglehub.load_dataset(
-                Adapter.PANDAS,
-                slug,
-                file_path or None,
-            )
-        except Exception as e:
-            logger.error("Fallo cargando Kaggle dataset: %s", e)
-            return
+def _novendor(x: str) -> str:
+    return _VENDOR_PREFIX.sub("", _norm(x)).strip()
 
-        if self.name_col not in df.columns or self.score_col not in df.columns:
-            logger.warning("Columnas esperadas no presentes: %s, %s", self.name_col, self.score_col)
-            logger.warning("Columnas disponibles: %s", list(df.columns))
-        for _, row in df.iterrows():
-            name = str(row.get(self.name_col, "")).strip()
-            score = row.get(self.score_col, None)
-            if not name or pd.isna(score):
-                continue
-            try:
-                score = int(float(score))
-            except Exception:
-                continue
-            self._put(name, score)
+# -------------------------------------------------------------------
+# Resolución robusta de rutas
+# -------------------------------------------------------------------
+def _resolve_path(p: Optional[str]) -> Optional[Path]:
+    if not p:
+        return None
+    cand = Path(p)
+    if cand.is_absolute() and cand.exists():
+        return cand
+    for base in (Path("/code"), Path("/code/app"), Path.cwd(), Path("/code/data")):
+        test = (base / cand).resolve()
+        if test.exists():
+            return test
+    # último intento: solo el nombre dentro de /code/data
+    guess = Path("/code/data") / Path(p).name
+    return guess if guess.exists() else None
 
-    def find_score(self, model_name: str) -> Optional[int]:
-        # match exact/normalizado + contención simple
-        key = _norm(model_name)
-        if key in self._scores:
-            return self._scores[key]
-        # búsqueda por contención
-        for k, v in self._scores.items():
-            if key in k or k in key:
-                return v
+# -------------------------------------------------------------------
+# Detección simple de columnas (auto o especificadas)
+# -------------------------------------------------------------------
+def _autodetect_columns(df: pd.DataFrame, for_cpu: bool,
+                        name_col_cfg: str, score_col_cfg: str) -> Tuple[str, str]:
+    cols = [c for c in df.columns]
+    low = {c.lower(): c for c in cols}
+
+    def pick_name(candidates: List[str]) -> Optional[str]:
+        for cand in candidates:
+            for lc, real in low.items():
+                if lc == cand or cand in lc:
+                    return real
         return None
 
-    def neighbors(self, score: int) -> Tuple[Optional[Tuple[str,int]], Optional[Tuple[str,int]]]:
-        # devuelve (lower_neighbor, upper_neighbor)
-        if not self._scores:
-            return None, None
-        sorted_items = sorted(self._scores.items(), key=lambda kv: kv[1])
-        lower = None
-        upper = None
-        for name, sc in sorted_items:
-            if sc <= score:
-                lower = (name, sc)
-            if sc >= score and upper is None:
-                upper = (name, sc)
-                break
-        return lower, upper
+    def pick_score(candidates: List[str]) -> Optional[str]:
+        for cand in candidates:
+            for lc, real in low.items():
+                if lc == cand or cand in lc:
+                    return real
+        # si no encontramos por nombre, tomar la primera numérica
+        nums = [c for c in cols if pd.api.types.is_numeric_dtype(df[c])]
+        if nums:
+            if for_cpu:
+                pref = [c for c in nums if "r23" in c.lower() or "cinebench" in c.lower()]
+                return pref[0] if pref else nums[0]
+            return nums[0]
+        return None
 
-    def all_scores(self) -> Dict[str,int]:
-        return dict(self._scores)
+    name_col = name_col_cfg if name_col_cfg != "auto" else pick_name(
+        ["model", "cpu name", "cpu", "processor", "name", "gpu", "graphics card", "productname", "cpuname"]
+    )
+    if score_col_cfg != "auto":
+        score_col = score_col_cfg
+    else:
+        score_col = pick_score(
+            ["r23", "cinebench", "multi", "single", "score", "points", "passmark", "g3d", "mark", "timespy", "3dmark", "avg", "average", "fps"]
+        )
+
+    if not name_col or not score_col:
+        raise ValueError("No se pudieron detectar columnas de nombre/puntaje")
+    return name_col, score_col
+
+# -------------------------------------------------------------------
+# Store de puntajes
+# -------------------------------------------------------------------
+class ScoresStore:
+    def __init__(self):
+        self._scores: Dict[str, int] = {}
+        self._loaded = False
+
+    def load(self):
+        self._scores = {}
+        loaded_any = False
+
+        if BENCH_SCORES_SOURCE == "csv":
+            cpu_path = _resolve_path(CPU_BENCH_CSV_PATH)
+            gpu_path = _resolve_path(GPU_BENCH_CSV_PATH)
+
+            if cpu_path and cpu_path.exists():
+                self._load_csv(cpu_path, for_cpu=True, name_col_cfg=CPU_NAME_COL, score_col_cfg=CPU_SCORE_COL)
+                loaded_any = True
+            else:
+                logger.warning(f"CPU CSV no encontrado: {CPU_BENCH_CSV_PATH}")
+
+            if gpu_path and gpu_path.exists():
+                self._load_csv(gpu_path, for_cpu=False, name_col_cfg=GPU_NAME_COL, score_col_cfg=GPU_SCORE_COL)
+                loaded_any = True
+            else:
+                logger.warning(f"GPU CSV no encontrado: {GPU_BENCH_CSV_PATH}")
+
+        if not loaded_any:
+            self._seed_minimal()
+
+        self._loaded = True
+        logger.info(f"Scores cargados: {len(self._scores)}")
+
+    def _load_csv(self, path: Path, for_cpu: bool, name_col_cfg: str, score_col_cfg: str):
+        df = pd.read_csv(path)
+        name_col, score_col = _autodetect_columns(df, for_cpu, name_col_cfg, score_col_cfg)
+        self._ingest_df(df[[name_col, score_col]].copy(), for_cpu, name_col, score_col)
+        logger.info(f"Leído {path} -> columnas: name='{name_col}', score='{score_col}'")
+
+    def _ingest_df(self, df: pd.DataFrame, for_cpu: bool, name_col_cfg: str, score_col_cfg: str):
+        df = df.dropna()
+
+        def to_int(v) -> Optional[int]:
+            try:
+                if pd.isna(v):
+                    return None
+                x = float(v)
+                if x != x:
+                    return None
+                return int(round(x))
+            except Exception:
+                return None
+
+        for _, row in df.iterrows():
+            name = str(row.iloc[0]).strip()
+            sc = to_int(row.iloc[1])
+            if not name or sc is None:
+                continue
+            k1 = _norm(name)
+            k2 = _novendor(name)
+            old = self._scores.get(k1)
+            if old is None or sc > old:
+                self._scores[k1] = sc
+            old2 = self._scores.get(k2)
+            if old2 is None or sc > old2:
+                self._scores[k2] = sc
+
+    def _seed_minimal(self):
+        logger.warning("No se cargaron CSV: usando seed mínima para mantener el servicio arriba.")
+        # Semilla mínima para que las rutas funcionen en dev
+        self._scores.update({
+            _norm("GeForce RTX 4070"): 23200,
+            _norm("Ryzen 5 5600"): 20000,
+            _norm("Threadripper 3990X"): 1262,  # Ejemplo de tu CSV de muestra (singleScore de ejemplo)
+        })
+
+    # API simple
+    def has_loaded(self) -> bool:
+        return self._loaded
+
+    def find_score(self, model_name: str) -> Optional[int]:
+        if not model_name:
+            return None
+        k1 = _norm(model_name)
+        k2 = _novendor(model_name)
+        return self._scores.get(k1) or self._scores.get(k2)
 
 # Singleton
 _STORE: Optional[ScoresStore] = None
@@ -169,3 +204,6 @@ def get_store() -> ScoresStore:
         _STORE = ScoresStore()
         _STORE.load()
     return _STORE
+
+def find_score(model_name: str) -> Optional[int]:
+    return get_store().find_score(model_name)
