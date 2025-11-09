@@ -127,9 +127,9 @@ services:
       - COMPONENT_SERVICE_URL=${COMPONENT_SERVICE_URL}
       - PRICES_DATABASE_URL=${PRICES_DATABASE_URL}
       - RABBITMQ_URL=${RABBITMQ_URL}
-      # Pasa cualquier otra variable necesaria desde .env
-      # - DATABASE_URL=${PRICING_DATABASE_URL} # Si guarda en DB
-      # - RABBITMQ_URL=${RABBITMQ_URL} # Si usa RabbitMQ
+      - PRICING_EXCHANGE=pricing
+      - PRICING_ROUTING_KEY_REFRESH=pricing.refresh
+      - PRICING_QUEUE=pricing.jobs
     expose:
       - "8005" # Puerto interno que usa el servicio
     networks:
@@ -198,20 +198,28 @@ services:
 
 
   rabbitmq:
-    image: rabbitmq:3.11-management # Imagen oficial con UI de gestión
+    image: rabbitmq:3.11-management
     container_name: rabbitmq-container
-    hostname: rabbitmq # Nombre de host dentro de la red docker
+    hostname: rabbitmq
     ports:
-      - "5672:5672"   # Puerto estándar AMQP para comunicación entre servicios
-      - "15672:15672" # Puerto para la interfaz web de gestión (accede en http://localhost:15672)
+      - "5672:5672"
+      - "15672:15672"
     environment:
-      # Credenciales por defecto (cámbialas en producción)
-      - RABBITMQ_DEFAULT_USER=guest 
+      - RABBITMQ_DEFAULT_USER=guest
       - RABBITMQ_DEFAULT_PASS=guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     networks:
-      - pcbuilder_net
+      default:
+        aliases:
+          - rabbitmq
+      pcbuilder_net: {}
     volumes:
-      - rabbitmq_data:/var/lib/rabbitmq # Volumen para persistir datos (opcional para dev)
+      - rabbitmq_data:/var/lib/rabbitmq
 
 
   redis:
@@ -223,6 +231,31 @@ services:
     networks:
       - pcbuilder_net
 
+
+
+
+  pricing-worker:
+    build:
+      context: ../../services/pricing
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      pricing-service:
+        condition: service_started
+    environment:
+      - RABBITMQ_URL=${RABBITMQ_URL}
+      - PRICES_DATABASE_URL=${PRICES_DATABASE_URL}
+      - COMPONENT_SERVICE_URL=${COMPONENT_SERVICE_URL}
+      - PRICING_EXCHANGE=pricing
+      - PRICING_ROUTING_KEY_REFRESH=pricing.refresh
+      - PRICING_QUEUE=pricing.jobs
+    command: ["python", "-m", "app.worker"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
 
 

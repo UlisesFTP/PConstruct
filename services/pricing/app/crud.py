@@ -95,48 +95,30 @@ async def process_price_request(message_body: bytes):
 
 
 # --- Función de scraping y guardado individual ---
-# (Asegúrate de tener SOLO UNA definición de esta función)
 async def scrape_and_save_prices(db: AsyncSession, component_id: int, component_name: str, country: str, semaphore: asyncio.Semaphore):
-    """Obtiene precios de todas las tiendas y los guarda."""
     async with semaphore:
-        logger.info(f"Scraping prices for '{component_name}' (ID: {component_id}) in {country}...")
-        try:
-            all_prices = await get_prices_for_component(component_name) # Llama al scraper
-
-            new_price_entries = []
-            for store, products in all_prices.items():
-                if not products:
-                    # logger.info(f"No prices found for {component_name} at {store}.") # Opcional: puede ser muy verboso
-                    continue
-
-                # Lógica simple: tomar el primer resultado
-                best_match = products[0]
-
-                # Crear entrada en DB
-                db_price = models.ComponentPrice(
-                    id=str(uuid.uuid4()),
-                    component_id=str(component_id),
-                    retailer=store,
-                    country_code=country, # Guardamos el país
-                    price=best_match.get('price'),
-                    currency=best_match.get('currency', 'MXN'),
-                    stock=best_match.get('stock', 'unknown'),
-                    url=best_match.get('link'),
-                    timestamp=datetime.utcnow(),
-                    additional_data={'scraped_name': best_match.get('name')}
-                )
-                new_price_entries.append(db_price)
-                # logger.info(f"Found price for {component_name} at {store}: {db_price.price} {db_price.currency}") # Opcional
-
-            if new_price_entries:
-                db.add_all(new_price_entries)
-                await db.commit()
-                logger.info(f"Saved {len(new_price_entries)} price entries for component ID {component_id}.")
-
-        except Exception as e:
-            logger.error(f"Failed scraping/saving prices for component ID {component_id}, name '{component_name}': {e}", exc_info=True)
-            await db.rollback() # Hacer rollback si algo falla al guardar
-
+        results = await get_prices_for_component(component_name)
+        new_price_entries = []
+        for store, products in results.items():
+            if not products:
+                continue
+            best_match = products[0]
+            db_price = models.ComponentPrice(
+                id=str(uuid.uuid4()),
+                component_id=str(component_id),
+                retailer=store,
+                country_code=country,
+                price=best_match.get('price'),
+                currency=best_match.get('currency', 'MXN'),
+                stock=best_match.get('stock', 'unknown'),
+                url=best_match.get('link'),
+                timestamp=datetime.utcnow(),
+                additional_data={'scraped_name': best_match.get('name')}
+            )
+            new_price_entries.append(db_price)
+        if new_price_entries:
+            db.add_all(new_price_entries)
+            await db.commit()
 
 # --- Función para obtener precios de la DB ---
 async def get_component_prices(

@@ -1,22 +1,21 @@
-# PConstruct/services/pricing/app/config.py
-import os
-from pydantic_settings import BaseSettings
-from dotenv import load_dotenv
-from pathlib import Path
-import logging # Añadir logging
+# app/config.py
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
+import logging
 
-logger = logging.getLogger(__name__)
-
-
+logger = logging.getLogger("pricing.config")
 
 class Settings(BaseSettings):
-    RABBITMQ_URL: str
-    COMPONENT_SERVICE_URL: str
-    # PRICING_DATABASE_URL: Optional[str] = None # Ejemplo
+    RABBITMQ_URL: str = Field(default="amqp://guest:guest@rabbitmq:5672/")
+    COMPONENT_SERVICE_URL: str = Field(default="http://component-service:8003")
+    LOG_LEVEL: str = Field(default="INFO")
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+    )
 
 settings = Settings()
-
-# Verificación opcional después de cargar (ayuda a depurar)
-logger.info(f"Pricing Service Settings Loaded:")
-logger.info(f" - RABBITMQ_URL: {settings.RABBITMQ_URL}")
-logger.info(f" - COMPONENT_SERVICE_URL: {settings.COMPONENT_SERVICE_URL}")
+logger.info("Pricing Settings loaded. RABBITMQ_URL=%s COMPONENT_SERVICE_URL=%s",
+            settings.RABBITMQ_URL, settings.COMPONENT_SERVICE_URL)

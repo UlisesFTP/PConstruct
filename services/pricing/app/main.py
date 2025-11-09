@@ -12,6 +12,8 @@ from .queues import publish_price_job
 from . import crud, queues, schemas
 from .database import get_db, engine, Base
 from fastapi.responses import JSONResponse
+from app.queues import startup as amqp_startup, shutdown as amqp_shutdown, amqp_client
+
 
 logger = logging.getLogger("pricing-service")
 
@@ -55,6 +57,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def _amqp_up():
+    await amqp_startup()
+
+@app.on_event("shutdown")
+async def _amqp_down():
+    await amqp_shutdown()
+
+
 @app.get("/prices/{component_id}")
 async def get_prices(component_id: int,
                      country_code: str = Query("MX"),
@@ -73,24 +86,13 @@ async def get_prices(component_id: int,
     return rows
 
 @app.post("/prices/refresh", status_code=202)
-async def refresh_prices(payload: dict):
-    """
-    payload: {
-      "component_ids": [5, 7, 9],
-      "country_code": "MX",
-      "retailers": ["amazon", "mercadolibre"]
+async def refresh_prices(body: dict):
+    # Ejemplo de payload estandarizado
+    payload = {
+        "component_ids": body.get("component_ids") or [],
+        "country_code": body.get("country_code", "MX"),
+        "retailers": body.get("retailers") or ["amazon", "newegg"],
+        "force": bool(body.get("force", False)),
     }
-    """
-    ids: List[int] = payload.get("component_ids", [])
-    country = payload.get("country_code", "MX")
-    retailers = payload.get("retailers", ["amazon", "mercadolibre"])
-    for cid in ids:
-        await publish_price_job({
-            "component_id": cid,
-            "country_code": country,
-            "retailers": retailers
-        })
-    return {"queued": len(ids)}
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
+    await amqp_client.publish_refresh(payload)
+    return {"status": "queued", "count": len(payload["component_ids"]) or None}
