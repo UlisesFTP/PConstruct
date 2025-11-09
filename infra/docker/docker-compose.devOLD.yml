@@ -47,20 +47,25 @@ services:
     # -------------------------
 
     environment:
-      - USER_SERVICE_URL=${USER_SERVICE_URL}
-      - POST_SERVICE_URL=${POST_SERVICE_URL}
-      - COMPONENT_SERVICE_URL=${COMPONENT_SERVICE_URL}
-      - BUILD_SERVICE_URL=${BUILD_SERVICE_URL}
-      - PRICE_SERVICE_URL=${PRICE_SERVICE_URL}
-      - BENCHMARK_SERVICE_URL=${BENCHMARK_SERVICE_URL}
+      - USER_SERVICE_URL=http://user-service:8001
+      - POSTS_SERVICE_URL=http://posts-service:8002
+      - COMPONENT_SERVICE_URL=http://component-service:8003
+      - BUILDS_SERVICE_URL=http://build-service:8004
+      - PRICING_SERVICE_URL=http://pricing-service:8005
+      - BENCHMARK_SERVICE_URL=http://benchmark-service:8006
       - JWT_SECRET=${JWT_SECRET}
       # Cloudinary vars se cargarán automáticamente desde el env_file
-
-      
       - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
       - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
       - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
-      - REDIS_URL=${REDIS_URL}
+      # Caching con Redis
+      - REDIS_URL=redis://redis:6379/0
+      - PRICE_TTL_HOURS=24
+      - PRICE_COOLDOWN_HOURS=6
+      - SSE_HEARTBEAT_SECS=25
+      - RETAILERS=amazon,mercado_libre
+
+
     depends_on:
       - user-service
       - posts-service
@@ -72,6 +77,7 @@ services:
       - redis
     networks:
       - pcbuilder_net
+      
 
   # --- Servicio de Publicaciones ---
   posts-service:
@@ -124,7 +130,7 @@ services:
       - ./.env # Para variables como RABBITMQ_URL, COMPONENT_SERVICE_URL
     environment:
       # Pasa URLs de otros servicios que necesita
-      - COMPONENT_SERVICE_URL=${COMPONENT_SERVICE_URL}
+      - COMPONENT_SERVICE_URL=http://component-service:8003
       - PRICES_DATABASE_URL=${PRICES_DATABASE_URL}
       - RABBITMQ_URL=${RABBITMQ_URL}
       # Pasa cualquier otra variable necesaria desde .env
@@ -137,6 +143,7 @@ services:
     depends_on:
       - component-service # Depende de components para obtener nombres
       - rabbitmq
+      - redis
 
 
 
@@ -150,9 +157,9 @@ services:
       - ./.env
     environment:
       - BUILDS_DATABASE_URL=${BUILDS_DATABASE_URL}
-      - COMPONENT_SERVICE_URL=${COMPONENT_SERVICE_URL}
+      - COMPONENT_SERVICE_URL=http://component-service:8003
       - RABBITMQ_URL=${RABBITMQ_URL}
-      - PRICE_SERVICE_URL=${PRICE_SERVICE_URL}
+      - PRICE_SERVICE_URL=http://pricing-service:8005
     expose:
       - "8004"
     networks:
@@ -172,7 +179,7 @@ services:
       - ./code/data:/code/data:ro
     environment:
       - BENCHMARKS_DATABASE_URL=${BENCHMARKS_DATABASE_URL}
-      - COMPONENT_SERVICE_URL=${COMPONENT_SERVICE_URL}
+      - COMPONENT_SERVICE_URL=http://component-service:8003
       - BENCH_SCORES_SOURCE=csv
       - CPU_BENCH_CSV_PATH=/code/data/CPU_BENCHMARK.csv
       - GPU_BENCH_CSV_PATH=/code/data/GPU_BENCHMARK.csv
@@ -184,7 +191,7 @@ services:
       - KAGGLE_FILE_PATH=
       - BENCH_NAME_COL=model
       - BENCH_SCORE_COL=passmark_score
-      - BUILD_SERVICE_URL=${BUILD_SERVICE_URL}
+      - BUILDS_SERVICE_URL=http://build-service:8004
       - ENABLE_GEMINI_FALLBACK=true
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - GEMINI_MODEL=gemini-2.5-flash
@@ -214,14 +221,15 @@ services:
       - rabbitmq_data:/var/lib/rabbitmq # Volumen para persistir datos (opcional para dev)
 
 
+
+
   redis:
     image: redis:7-alpine
     container_name: redis
-    command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "6379:6379"
-    networks:
-      - pcbuilder_net
+    ports: 
+       - "6379:6379"
+    networks: 
+    - pcbuilder_net
 
 
 
@@ -230,6 +238,7 @@ services:
 networks:
   pcbuilder_net:
     driver: bridge
+  
 
 # VOLUMENES DE PERSISTENCIA DE DATOS
 volumes:

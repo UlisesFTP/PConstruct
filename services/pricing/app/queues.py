@@ -1,10 +1,17 @@
 # PConstruct/services/pricing/app/queues.py
-import aio_pika
+import aio_pika, json, os
 from .config import settings
 import asyncio # <-- Importa asyncio
 import logging # <-- Importa logging
 
 logger = logging.getLogger(__name__) # <-- Configura logger
+
+
+
+RABBIT_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
+EXCHANGE = os.getenv("PRICING_EXCHANGE", "pricing")
+ROUTING_KEY = os.getenv("PRICING_ROUTING_KEY", "fetch")
+
 
 MAX_RETRIES = 5 # Número máximo de intentos
 RETRY_DELAY = 5 # Segundos entre intentos
@@ -93,3 +100,18 @@ async def consume_price_requests(callback):
     except Exception as e:
         logger.error(f"Error inesperado en el consumidor de RabbitMQ: {e}", exc_info=True)
         # Considera reiniciar el consumidor o manejar el error
+        
+        
+async def publish_price_job(message: dict):
+    connection = await aio_pika.connect_robust(RABBIT_URL)
+    try:
+        channel = await connection.channel()
+        exchange = await channel.declare_exchange(EXCHANGE, aio_pika.ExchangeType.DIRECT, durable=True)
+        body = json.dumps(message).encode("utf-8")
+        await exchange.publish(
+            aio_pika.Message(body=body, delivery_mode=aio_pika.DeliveryMode.PERSISTENT),
+            routing_key=ROUTING_KEY,
+        )
+        logger.info(f"[pricing] queued: {message}")
+    finally:
+        await connection.close()

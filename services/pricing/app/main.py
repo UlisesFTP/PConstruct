@@ -1,14 +1,17 @@
 import logging
 import asyncio
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional,List
 
-from fastapi import FastAPI, BackgroundTasks, Depends
+from fastapi import FastAPI, BackgroundTasks, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from .database import get_db  # tu session maker
+from .crud import get_component_prices  # usa tus funcs reales
+from .queues import publish_price_job
 from . import crud, queues, schemas
 from .database import get_db, engine, Base
+from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("pricing-service")
 
@@ -52,36 +55,42 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+@app.get("/prices/{component_id}")
+async def get_prices(component_id: int,
+                     country_code: str = Query("MX"),
+                     db=Depends(get_db)):
+    # 1) Consulta DB
+    rows = await get_component_prices(db, component_id, country_code)
+    if not rows:
+        # 2) Encola scraping (no bloquea la respuesta)
+        asyncio.create_task(publish_price_job({
+            "component_id": component_id,
+            "country_code": country_code,
+            "retailers": ["amazon", "mercadolibre"]
+        }))
+        # 3) Devuelve [] (compatibilidad con el frontend actual)
+        return JSONResponse(content=[], headers={"X-Refresh-Triggered": "true"})
+    return rows
 
 @app.post("/prices/refresh", status_code=202)
-async def refresh_prices(
-    request: schemas.RefreshPricesRequest,
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
-):
-    background_tasks.add_task(
-        crud.process_price_refresh,
-        db=db,
-        component_ids=request.component_ids,
-        countries=request.countries,
-    )
-    return {"message": "Price update process started in background"}
-
-@app.get("/prices/{component_id}")
-async def get_prices(
-    component_id: int,
-    country_code: Optional[str] = None,
-    timeframe_days: int = 7,
-    db: AsyncSession = Depends(get_db),
-):
-    prices = await crud.get_component_prices(
-        db=db,
-        component_id=component_id,
-        country_code=country_code,
-        timeframe_days=timeframe_days,
-    )
-    return prices
-
+async def refresh_prices(payload: dict):
+    """
+    payload: {
+      "component_ids": [5, 7, 9],
+      "country_code": "MX",
+      "retailers": ["amazon", "mercadolibre"]
+    }
+    """
+    ids: List[int] = payload.get("component_ids", [])
+    country = payload.get("country_code", "MX")
+    retailers = payload.get("retailers", ["amazon", "mercadolibre"])
+    for cid in ids:
+        await publish_price_job({
+            "component_id": cid,
+            "country_code": country,
+            "retailers": retailers
+        })
+    return {"queued": len(ids)}
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
