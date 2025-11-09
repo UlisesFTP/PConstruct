@@ -389,3 +389,5 @@ async def get_prices_for_component(search_term: str) -> Dict[str, List[Dict]]:
 #        print("------------------")
 #
 #    asyncio.run(test_run())
+
+

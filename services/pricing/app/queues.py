@@ -5,6 +5,19 @@ import asyncio # <-- Importa asyncio
 import logging # <-- Importa logging
 from typing import Optional
 
+from dataclasses import dataclass
+
+EXCHANGE_NAME = "pricing"
+QUEUE_REFRESH = "pricing.refresh"
+ROUTING_REFRESH = "refresh"
+
+@dataclass(frozen=True)
+class Routing:
+    exchange: str = EXCHANGE_NAME
+    queue_refresh: str = QUEUE_REFRESH
+    routing_refresh: str = ROUTING_REFRESH
+
+
 logger = logging.getLogger("pricing.amqp") # <-- Configura logger
 
 
