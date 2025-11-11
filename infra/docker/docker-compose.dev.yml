@@ -51,7 +51,6 @@ services:
       - POST_SERVICE_URL=${POST_SERVICE_URL}
       - COMPONENT_SERVICE_URL=${COMPONENT_SERVICE_URL}
       - BUILD_SERVICE_URL=${BUILD_SERVICE_URL}
-      - PRICE_SERVICE_URL=${PRICE_SERVICE_URL}
       - BENCHMARK_SERVICE_URL=${BENCHMARK_SERVICE_URL}
       - JWT_SECRET=${JWT_SECRET}
       # Cloudinary vars se cargarán automáticamente desde el env_file
@@ -65,7 +64,6 @@ services:
       - user-service
       - posts-service
       - component-service 
-      - pricing-service
       - build-service
       - benchmark-service
       - rabbitmq
@@ -92,51 +90,76 @@ services:
     networks:
       - pcbuilder_net
 
-  # --- Servicio de Componentes ---
+
+
+# ... (Aquí van 'api-gateway', 'posts-service', etc.)
+
+  # --- ¡NUEVO! Servicio de Componentes ---
   component-service:
     build:
       context: ../../services/components
       dockerfile: Dockerfile
     image: component-service-dev
     container_name: component-service-container
+    
+    # Lee las variables del archivo .env
     env_file:
-      - ./.env # Si necesita variables de entorno (ej. DATABASE_URL)
+      - ./.env
+      
+    # Pasa las variables al contenedor
     environment:
       - COMPONENTS_DATABASE_URL=${COMPONENTS_DATABASE_URL}
-      - LOAD_INITIAL_DATA=true # O false si no quieres cargar datos iniciales
+      - REDIS_URL=redis://components-cache:6379 # URL interna de Redis
+    
+    expose:
+      - "8003" # El puerto interno que definimos en el Dockerfile
       
-    expose:
-      - "8003" # Puerto interno que usa el servicio
     networks:
       - pcbuilder_net
-    # depends_on: # Añadir dependencia si usa una base de datos
-      # - component-db # Ejemplo
-
-
-#  # --- Servicio de Precios ---
-  pricing-service:
-    build:
-      context: ../../services/pricing
-      dockerfile: Dockerfile
-    image: pricing-service-dev
-    container_name: pricing-service-container
-    env_file:
-      - ./.env # Para variables como RABBITMQ_URL, COMPONENT_SERVICE_URL
-    environment:
-      # Pasa URLs de otros servicios que necesita
-      - COMPONENT_SERVICE_URL=${COMPONENT_SERVICE_URL}
-      - PRICES_DATABASE_URL=${PRICES_DATABASE_URL}
-      - RABBITMQ_URL=${RABBITMQ_URL}
-      - PRICING_EXCHANGE=pricing
-      - PRICING_ROUTING_KEY_REFRESH=pricing.refresh
-      - PRICING_QUEUE=pricing.jobs
-    expose:
-      - "8005" # Puerto interno que usa el servicio
-    networks:
-      - pcbuilder_net
+      
     depends_on:
-      - component-service # Depende de components para obtener nombres
-      - rabbitmq
+      - components-db  # Depende de su propia DB
+      - components-cache # Depende de su propia caché
+
+  # --- ¡NUEVO! Base de Datos de Componentes ---
+  components-db:
+    image: postgres:15-alpine
+    container_name: components-db-container
+    
+    # Lee las variables del .env
+    env_file:
+      - ./.env
+      
+    # Configura la DB (PostgreSQL usará estas variables)
+    environment:
+      - POSTGRES_USER=${COMPONENTS_DB_USER}
+      - POSTGRES_PASSWORD=${COMPONENTS_DB_PASSWORD}
+      - POSTGRES_DB=${COMPONENTS_DB_NAME}
+      
+    ports:
+      - "5434:5432" # Mapea a un puerto diferente (5434) para evitar conflictos
+      
+    volumes:
+      - components_postgres_data:/var/lib/postgresql/data
+      
+    networks:
+      - pcbuilder_net
+      
+  # --- ¡NUEVO! Caché de Componentes (Redis) ---
+  components-cache:
+    image: redis:7-alpine
+    container_name: components-cache-container
+    
+    ports:
+      - "6380:6379" # Mapea a un puerto diferente (6380) para evitar conflictos
+      
+    networks:
+      - pcbuilder_net
+
+  # ... (Aquí van 'build-service', 'benchmark-service', etc.)
+
+
+
 
 
 
@@ -152,12 +175,13 @@ services:
       - BUILDS_DATABASE_URL=${BUILDS_DATABASE_URL}
       - COMPONENT_SERVICE_URL=${COMPONENT_SERVICE_URL}
       - RABBITMQ_URL=${RABBITMQ_URL}
-      - PRICE_SERVICE_URL=${PRICE_SERVICE_URL}
     expose:
       - "8004"
     networks:
       - pcbuilder_net
  
+
+
 
 
   benchmark-service:
@@ -234,31 +258,6 @@ services:
 
 
 
-  pricing-worker:
-    build:
-      context: ../../services/pricing
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-      pricing-service:
-        condition: service_started
-    environment:
-      - RABBITMQ_URL=${RABBITMQ_URL}
-      - PRICES_DATABASE_URL=${PRICES_DATABASE_URL}
-      - COMPONENT_SERVICE_URL=${COMPONENT_SERVICE_URL}
-      - PRICING_EXCHANGE=pricing
-      - PRICING_ROUTING_KEY_REFRESH=pricing.refresh
-      - PRICING_QUEUE=pricing.jobs
-    command: ["python", "-m", "app.worker"]
-    healthcheck:
-      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-
-
 # --- Red Compartida ---
 networks:
   pcbuilder_net:
@@ -268,3 +267,5 @@ networks:
 volumes:
   rabbitmq_data: 
     driver: local # (Opcional, 'local' es el default)
+  components_postgres_data:
+    driver: local

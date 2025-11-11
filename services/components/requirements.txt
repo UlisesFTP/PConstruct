@@ -1,12 +1,23 @@
-# PConstruct/services/components/requirements.txt
-asyncpg
-fastapi>=0.95.0
-uvicorn[standard]>=0.20.0
-sqlalchemy>=2.0.0
-# psycopg2-binary # O asyncpg si vas a cambiar database.py a asíncrono
-pydantic>=1.10.0
-pydantic-settings
-python-dotenv>=1.0.0 # Para cargar variables de entorno como DATABASE_URL desde .env
+# --- Framework de la API ---
+fastapi
+uvicorn[standard]
 
-# Dependencias específicas de los modelos y lógica
-# (SQLAlchemy ya incluye soporte para Enum y JSON básico)
+# --- Base de Datos (PostgreSQL) ---
+sqlalchemy       # ORM
+psycopg2-binary  # Driver de PostgreSQL
+alembic          # Para migraciones de base de datos
+
+# --- Caché (Redis) ---
+redis>=4.2.0
+
+# --- Validación de Datos y Configuración ---
+pydantic[email]
+pydantic-settings
+
+# --- Dependencias del Scraper ---
+# (Se instalan aquí para que 'run_scraper.py' funcione)
+selenium
+beautifulsoup4
+webdriver-manager
+scikit-learn     # (Para el filtro inteligente de tu scraper)
+lxml             # (Parser más rápido para BeautifulSoup)

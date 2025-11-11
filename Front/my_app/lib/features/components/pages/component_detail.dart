@@ -1,108 +1,167 @@
+// lib/features/components/pages/component_detail.dart
 import 'package:flutter/material.dart';
 import 'dart:ui';
-import 'package:my_app/models/component.dart';
-import 'package:my_app/models/review.dart';
+import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart'; // Para abrir links
 
-// Remove main() and MyApp if they were here for testing
+// ¡Importamos los nuevos modelos y el ApiClient!
+import 'package:my_app/models/component.dart'; // Trae ComponentDetail
+import 'package:my_app/models/component_review.dart';
+import 'package:my_app/models/comment_componente.dart';
+import 'package:my_app/models/offer.dart';
+import 'package:my_app/core/api/api_client.dart';
 
 class ComponentDetailPage extends StatefulWidget {
-  final Component component;
-  const ComponentDetailPage({super.key, required this.component});
+  // --- ¡CAMBIO EN EL CONSTRUCTOR! ---
+  // Ya no recibe un objeto 'Component', solo el ID.
+  final int componentId;
+  const ComponentDetailPage({super.key, required this.componentId});
 
   @override
   State<ComponentDetailPage> createState() => _ComponentDetailPageState();
 }
 
 class _ComponentDetailPageState extends State<ComponentDetailPage> {
-  // All helper methods go INSIDE this class
-  final TextEditingController _commentController = TextEditingController();
+  // --- NUEVO ESTADO PARA DATOS REALES ---
+  late Future<ComponentDetail> _detailFuture;
+  late ApiClient _apiClient;
 
-  // --- MOCK DATA REMAINS ---
-  final List<Review> reviews = [
-    Review(
-      userName: 'Carlos M.',
-      userAvatar:
-          'https://lh3.googleusercontent.com/aida-public/AB6AXuDAI9VouCAj_d1M0x9x7DO-evzw1ce6scJrQdmd14Om24I1ozNfU7BhwUfi9trJ_QHleVknXaf9Plwvu3wpKHIFv57iCfutbZlAAeG3U_x5mnnVXcHpmtRhgP-fNQ63SRio878ZwUdRwwUEvAlHAfwKSfzc11bEZ3Yg5nZqbHZPNl9nLxChkIcicsn32mb5R2gcZqhWbND8HL3-wANx6Z_17fSw9cEe7PWr8vkHxnC61StjZxraAPNRQL9H_SltI4i3ypH849LShvo',
-      timeAgo: 'Hace 2 semanas',
-      rating: 5,
-      comment:
-          'Excelente procesador, muy rápido y eficiente. Ideal para juegos y aplicaciones pesadas.',
-      likes: 15,
-      dislikes: 2,
-    ),
-    Review(
-      userName: 'Ana R.',
-      userAvatar:
-          'https://lh3.googleusercontent.com/aida-public/AB6AXuDkvJ-Mm7HmmfjA6RLU6-i5pmdBZXP_ZGMYgevLpb47WFJeF5w7eLubUl4qyrXzR39FHerRq-IMw6lz_Bb-v17qwijb2QNsfv_csC_ZMphLiT9mYEjF0oQpUFoqU8nDJ_tcINSZbRNcJcfQLC7wU3MvFm9-AzYLAn24zFqgV9hnnuubS48mnPW_MT4d1ZgNTFCbsPaiB2bFxNX8AiMB0Ij-ZOiDqjQlpdPJXVTq7VoM1ZVzz1VHzdJkynMKZK0-I6mBgvrpJMINeAg',
-      timeAgo: 'Hace 1 mes',
-      rating: 4,
-      comment:
-          'Buen rendimiento, pero un poco caro. Cumple con las expectativas.',
-      likes: 8,
-      dislikes: 1,
-    ),
-    Review(
-      userName: 'Luis G.',
-      userAvatar:
-          'https://lh3.googleusercontent.com/aida-public/AB6AXuDZokTdYgy02tp0uiv5h7fyZGlfJ1JpDefpG1rEF7AN6FfypvXymVuXycU3uAA5cD_XtKCiOP2_JUcFn16TA9S_p_JZtRkOIC2Op0diaPdOipqiwcGk24IC3K6Rd0K01nTY_TvqcrjwdLl8F5NaF8s3R_rjP0qYybSzHcD8evPmj3WmSkZMZP-FKHlEqIsdRlmEcPtdoLdgAEUrTS2aqeywouHAEqK53B55cVI-Wmi32sqQkOsBkoKTa--TXdptSZLHxwfcWLl3sFk',
-      timeAgo: 'Hace 2 meses',
-      rating: 3,
-      comment:
-          'Rendimiento aceptable, pero esperaba más por el precio. Se calienta bastante.',
-      likes: 5,
-      dislikes: 3,
-    ),
-  ];
-  // --- END MOCK DATA ---
+  final TextEditingController _commentController = TextEditingController();
+  // (Controlador para la *nueva reseña*, no para un comentario a reseña)
+  final TextEditingController _reviewController = TextEditingController();
+  int _reviewRating = 0; // Para guardar las estrellas seleccionadas
+
+  // --- ¡DATOS MOCK ELIMINADOS! ---
+  // final List<Review> reviews = [ ... ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Obtiene el ApiClient y carga los datos
+    _apiClient = Provider.of<ApiClient>(context, listen: false);
+    _fetchData();
+  }
+
+  // --- NUEVA FUNCIÓN PARA OBTENER DATOS ---
+  void _fetchData() {
+    setState(() {
+      _detailFuture = _apiClient.fetchComponentDetail(widget.componentId);
+    });
+  }
+
+  // --- NUEVA FUNCIÓN PARA ENVIAR RESEÑA ---
+  Future<void> _postReview() async {
+    if (_reviewController.text.isEmpty || _reviewRating == 0) {
+      // Mostrar error
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Por favor, añade un rating y un comentario.'),
+        ),
+      );
+      return;
+    }
+
+    try {
+      await _apiClient.postReview(
+        componentId: widget.componentId,
+        rating: _reviewRating,
+        content: _reviewController.text,
+        // title: (opcional)
+      );
+
+      // Limpia los campos y recarga los datos
+      _reviewController.clear();
+      setState(() {
+        _reviewRating = 0;
+      });
+      _fetchData(); // Vuelve a cargar los detalles (incluyendo la nueva reseña)
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al enviar reseña: $e')));
+    }
+  }
 
   @override
   void dispose() {
-    _commentController.dispose(); // Dispose the controller
+    _commentController.dispose();
+    _reviewController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // context is available here
-    final theme = Theme.of(context);
     final bool isDesktop = MediaQuery.of(context).size.width >= 768;
 
-    return SingleChildScrollView(
-      padding: EdgeInsets.symmetric(
-        horizontal: isDesktop ? 32 : 24,
-        vertical: 24,
-      ),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1120),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildBreadcrumbs(), // Methods are called from within the State class
-              const SizedBox(height: 24),
-              _buildMainSection(),
-              const SizedBox(height: 24),
-              _buildRatingSection(),
-              const SizedBox(height: 24),
-              _buildCommentsSection(),
-              const SizedBox(height: 24),
-              _buildPricesSection(),
-            ],
-          ),
-        ),
-      ),
+    // --- ¡NUEVO: FUTURE BUILDER! ---
+    return FutureBuilder<ComponentDetail>(
+      future: _detailFuture,
+      builder: (context, snapshot) {
+        // 1. Estado de Carga
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(64.0),
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        // 2. Estado de Error
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Error al cargar: ${snapshot.error}',
+              style: const TextStyle(color: Colors.white),
+            ),
+          );
+        }
+
+        // 3. Estado con Datos
+        if (snapshot.hasData) {
+          final component = snapshot.data!;
+          // Construimos la UI real
+          return SingleChildScrollView(
+            padding: EdgeInsets.symmetric(
+              horizontal: isDesktop ? 32 : 24,
+              vertical: 24,
+            ),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1120),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildBreadcrumbs(component),
+                    const SizedBox(height: 24),
+                    _buildMainSection(component),
+                    const SizedBox(height: 24),
+                    _buildRatingSection(component),
+                    const SizedBox(height: 24),
+                    _buildCommentsSection(component),
+                    const SizedBox(height: 24),
+                    _buildPricesSection(component),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        // Estado por defecto (no debería llegar aquí)
+        return const Center(child: Text('Iniciando...'));
+      },
     );
   }
 
-  // --- ALL HELPER METHODS ARE DEFINED *INSIDE* THE STATE CLASS ---
+  // --- TODOS LOS MÉTODOS HELPER AHORA RECIBEN EL MODELO 'ComponentDetail' ---
 
-  Widget _buildBreadcrumbs() {
-    // Has access to context and widget
+  Widget _buildBreadcrumbs(ComponentDetail component) {
     return Wrap(
       spacing: 8,
       children: [
         InkWell(
-          onTap: () => Navigator.maybePop(context), // Use context
+          onTap: () => Navigator.of(context).pushNamed('/components'),
           child: const Text(
             'Componentes',
             style: TextStyle(
@@ -117,7 +176,7 @@ class _ComponentDetailPageState extends State<ComponentDetailPage> {
           style: TextStyle(color: Color(0xFFA0A0A0), fontSize: 14),
         ),
         Text(
-          widget.component.categoria, // Use widget.component
+          component.category, // <-- Dato real
           style: const TextStyle(
             color: Colors.white,
             fontSize: 14,
@@ -128,8 +187,8 @@ class _ComponentDetailPageState extends State<ComponentDetailPage> {
     );
   }
 
-  Widget _buildMainSection() {
-    // Has access to widget
+  Widget _buildMainSection(ComponentDetail component) {
+    // ... (igual, pero usa 'component' real)
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: BackdropFilter(
@@ -145,7 +204,7 @@ class _ComponentDetailPageState extends State<ComponentDetailPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                widget.component.name, // Use widget.component
+                component.name, // <-- Dato real
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 30,
@@ -154,16 +213,15 @@ class _ComponentDetailPageState extends State<ComponentDetailPage> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Componente de tipo ${widget.component.categoria} fabricado por ${widget.component.marca}.', // Use widget.component
+                'Componente de tipo ${component.category} fabricado por ${component.brand ?? "N/A"}.', // <-- Dato real
                 style: const TextStyle(color: Color(0xFFA0A0A0), fontSize: 16),
               ),
               const SizedBox(height: 24),
-              if (widget.component.imageUrl != null &&
-                  widget.component.imageUrl!.isNotEmpty) // Use widget.component
+              if (component.imageUrl != null && component.imageUrl!.isNotEmpty)
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: Image.network(
-                    widget.component.imageUrl!, // Use widget.component
+                    component.imageUrl!, // <-- Dato real
                     width: double.infinity,
                     fit: BoxFit.cover,
                     errorBuilder: (context, error, stackTrace) => Container(
@@ -202,7 +260,8 @@ class _ComponentDetailPageState extends State<ComponentDetailPage> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Aquí iría una descripción más detallada sobre ${widget.component.name}.', // Use widget.component
+                component.description ??
+                    'No hay descripción disponible.', // <-- Dato real
                 style: const TextStyle(color: Color(0xFFE0E0E0), fontSize: 16),
               ),
             ],
@@ -212,7 +271,10 @@ class _ComponentDetailPageState extends State<ComponentDetailPage> {
     );
   }
 
-  Widget _buildRatingSection() {
+  Widget _buildRatingSection(ComponentDetail component) {
+    // ¡Sección actualizada con datos reales!
+    final rating = component.averageRating ?? 0.0;
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: BackdropFilter(
@@ -243,9 +305,12 @@ class _ComponentDetailPageState extends State<ComponentDetailPage> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'N/A',
-                        style: TextStyle(
+                      Text(
+                        // <-- Dato real
+                        component.reviewCount > 0
+                            ? rating.toStringAsFixed(1)
+                            : 'N/A',
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 36,
                           fontWeight: FontWeight.w900,
@@ -256,42 +321,35 @@ class _ComponentDetailPageState extends State<ComponentDetailPage> {
                         mainAxisSize: MainAxisSize.min,
                         children: List.generate(
                           5,
-                          (index) => const Padding(
-                            padding: EdgeInsets.only(right: 4.0),
+                          (index) => Padding(
+                            padding: const EdgeInsets.only(right: 4.0),
                             child: Icon(
-                              Icons.star_outline,
-                              color: Color(0xFFA0A0A0),
+                              // <-- Lógica de estrellas real
+                              index < rating.floor()
+                                  ? Icons.star
+                                  : (index < rating
+                                        ? Icons.star_half
+                                        : Icons.star_outline),
+                              color: rating > 0
+                                  ? Color(0xFFC7384D)
+                                  : Color(0xFFA0A0A0),
                               size: 20,
                             ),
                           ),
                         ),
                       ),
                       const SizedBox(height: 8),
-                      const Text(
-                        '0 reviews',
-                        style: TextStyle(
+                      Text(
+                        // <-- Dato real
+                        '${component.reviewCount} reviews',
+                        style: const TextStyle(
                           color: Color(0xFFA0A0A0),
                           fontSize: 14,
                         ),
                       ),
                     ],
                   ),
-                  SizedBox(
-                    width: 300,
-                    child: Column(
-                      children: [
-                        _buildRatingBar(5, 0.0),
-                        const SizedBox(height: 8),
-                        _buildRatingBar(4, 0.0),
-                        const SizedBox(height: 8),
-                        _buildRatingBar(3, 0.0),
-                        const SizedBox(height: 8),
-                        _buildRatingBar(2, 0.0),
-                        const SizedBox(height: 8),
-                        _buildRatingBar(1, 0.0),
-                      ],
-                    ),
-                  ),
+                  // (Las barras de porcentaje se pueden implementar después)
                 ],
               ),
             ],
@@ -301,51 +359,10 @@ class _ComponentDetailPageState extends State<ComponentDetailPage> {
     );
   }
 
-  Widget _buildRatingBar(int stars, double percentage) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 20,
-          child: Text(
-            '$stars',
-            style: const TextStyle(color: Colors.white, fontSize: 14),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Container(
-            height: 8,
-            decoration: BoxDecoration(
-              color: const Color(0xFFC7384D).withOpacity(0.2),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: FractionallySizedBox(
-              alignment: Alignment.centerLeft,
-              widthFactor: percentage,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFC7384D),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        SizedBox(
-          width: 50,
-          child: Text(
-            '${(percentage * 100).toInt()}%',
-            style: const TextStyle(color: Color(0xFFA0A0A0), fontSize: 14),
-            textAlign: TextAlign.right,
-          ),
-        ),
-      ],
-    );
-  }
+  Widget _buildCommentsSection(ComponentDetail component) {
+    // ¡Sección actualizada con datos reales!
+    final reviews = component.reviews; // <-- Dato real
 
-  Widget _buildCommentsSection() {
-    // Has access to reviews and _commentController
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: BackdropFilter(
@@ -369,7 +386,7 @@ class _ComponentDetailPageState extends State<ComponentDetailPage> {
                 ),
               ),
               const SizedBox(height: 16),
-              if (reviews.isEmpty) // Use reviews (defined in State)
+              if (reviews.isEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 32.0),
                   child: Center(
@@ -383,21 +400,51 @@ class _ComponentDetailPageState extends State<ComponentDetailPage> {
                 ListView.separated(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  itemCount: reviews.length, // Use reviews
+                  itemCount: reviews.length,
                   separatorBuilder: (context, index) => const Padding(
                     padding: EdgeInsets.symmetric(vertical: 24),
                     child: Divider(color: Color(0xFF2A2A2A), height: 1),
                   ),
                   itemBuilder: (context, index) {
-                    return ReviewCard(review: reviews[index]); // Use reviews
+                    // Pasa el nuevo modelo ComponentReview
+                    return ReviewCard(review: reviews[index]);
                   },
                 ),
               const SizedBox(height: 24),
+              const Divider(color: Color(0xFF2A2A2A), height: 1),
+              const SizedBox(height: 24),
+              // --- Formulario para NUEVA RESEÑA ---
+              const Text(
+                'Escribe tu reseña',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Selector de Estrellas
+              Row(
+                children: List.generate(5, (index) {
+                  return IconButton(
+                    icon: Icon(
+                      index < _reviewRating ? Icons.star : Icons.star_outline,
+                      color: Color(0xFFC7384D),
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _reviewRating = index + 1;
+                      });
+                    },
+                  );
+                }),
+              ),
+              const SizedBox(height: 16),
+              // Campo de texto para la reseña
               TextField(
-                controller:
-                    _commentController, // Use _commentController (defined in State)
+                controller: _reviewController,
                 decoration: InputDecoration(
-                  hintText: 'Escribe tu comentario...',
+                  hintText: 'Escribe tu reseña...',
                   hintStyle: const TextStyle(color: Colors.grey),
                   filled: true,
                   fillColor:
@@ -429,9 +476,7 @@ class _ComponentDetailPageState extends State<ComponentDetailPage> {
               Align(
                 alignment: Alignment.centerRight,
                 child: ElevatedButton(
-                  onPressed: () {
-                    /* TODO: Lógica para enviar comentario */
-                  },
+                  onPressed: _postReview, // <-- Llama a la función de posteo
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFC7384D),
                     foregroundColor: Colors.white,
@@ -456,8 +501,11 @@ class _ComponentDetailPageState extends State<ComponentDetailPage> {
     );
   }
 
-  Widget _buildPricesSection() {
-    // Has access to widget
+  Widget _buildPricesSection(ComponentDetail component) {
+    // ¡Sección actualizada con datos reales!
+    final offers = component.offers;
+    final bestOffer = (offers.isNotEmpty) ? offers[0] : null;
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: BackdropFilter(
@@ -481,163 +529,42 @@ class _ComponentDetailPageState extends State<ComponentDetailPage> {
                 ),
               ),
               const SizedBox(height: 16),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: const Color.fromRGBO(40, 40, 40, 0.7),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFF2A2A2A)),
-                    ),
-                    padding: const EdgeInsets.all(16),
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final isMobile = constraints.maxWidth < 600;
-                        return Flex(
-                          direction: isMobile ? Axis.vertical : Axis.horizontal,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    widget.component.name,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                    ),
-                                  ), // Use widget.component
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Precio base: \$${widget.component.price.toStringAsFixed(0)} MXN',
-                                    style: const TextStyle(
-                                      color: Color(0xFFA0A0A0),
-                                      fontSize: 14,
-                                    ),
-                                  ), // Use widget.component
-                                  const SizedBox(height: 16),
-                                  ElevatedButton.icon(
-                                    onPressed: () {
-                                      /* TODO: Ver tiendas/comparar */
-                                    },
-                                    icon: const Icon(
-                                      Icons.shopping_cart,
-                                      color: Colors.white,
-                                      size: 18,
-                                    ),
-                                    label: const Text(
-                                      'Ver Tiendas',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFFC7384D),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 10,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (!isMobile) const SizedBox(width: 24),
-                            if (isMobile) const SizedBox(height: 16),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child:
-                                  (widget.component.imageUrl != null &&
-                                      widget
-                                          .component
-                                          .imageUrl!
-                                          .isNotEmpty) // Use widget.component
-                                  ? Image.network(
-                                      widget
-                                          .component
-                                          .imageUrl!, // Use widget.component
-                                      width: isMobile ? double.infinity : 192,
-                                      height: isMobile ? 150 : 120,
-                                      fit: BoxFit.contain,
-                                      errorBuilder:
-                                          (context, error, stackTrace) =>
-                                              Container(
-                                                width: isMobile
-                                                    ? double.infinity
-                                                    : 192,
-                                                height: isMobile ? 150 : 120,
-                                                color: Colors.grey[800],
-                                                child: const Center(
-                                                  child: Icon(
-                                                    Icons.broken_image,
-                                                    color: Colors.grey,
-                                                  ),
-                                                ),
-                                              ),
-                                    )
-                                  : Container(
-                                      width: isMobile ? double.infinity : 192,
-                                      height: isMobile ? 150 : 120,
-                                      decoration: BoxDecoration(
-                                        color: Colors.grey[850],
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: const Center(
-                                        child: Icon(
-                                          Icons.image_not_supported,
-                                          size: 40,
-                                          color: Colors.grey,
-                                        ),
-                                      ),
-                                    ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
+
+              if (bestOffer == null)
+                const Center(
+                  child: Text(
+                    "No hay ofertas de precio disponibles.",
+                    style: TextStyle(color: Colors.grey),
                   ),
-                ),
-              ),
+                )
+              else
+                // Muestra la mejor oferta (la primera de la lista)
+                _buildBestOfferCard(bestOffer, component),
+
               const SizedBox(height: 12),
+
+              // Muestra los botones de todas las tiendas
               LayoutBuilder(
                 builder: (context, constraints) {
+                  if (offers.isEmpty) return const SizedBox.shrink();
+
                   final crossAxisCount = constraints.maxWidth < 600
                       ? 2
                       : (constraints.maxWidth < 900 ? 3 : 4);
-                  List<Widget> storeButtons = widget
-                      .component
-                      .stores // Use widget.component
-                      .map((storeName) => _buildStoreButton(storeName))
-                      .toList();
-                  while (storeButtons.length % crossAxisCount != 0 &&
-                      storeButtons.isNotEmpty) {
-                    storeButtons.add(Container());
-                  }
-                  if (storeButtons.isEmpty) {
-                    return const Padding(
-                      padding: EdgeInsets.only(top: 8.0),
-                      child: Text(
-                        "No hay tiendas disponibles.",
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                    );
-                  }
-                  return GridView.count(
+
+                  return GridView.builder(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: crossAxisCount,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                      childAspectRatio: 3.5,
+                    ),
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: crossAxisCount,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 3.5,
-                    children: storeButtons,
+                    itemCount: offers.length,
+                    itemBuilder: (context, index) {
+                      return _buildStoreButton(offers[index]);
+                    },
                   );
                 },
               ),
@@ -648,9 +575,147 @@ class _ComponentDetailPageState extends State<ComponentDetailPage> {
     );
   }
 
-  Widget _buildStoreButton(String storeName) {
+  // Widget para la tarjeta de la MEJOR oferta
+  Widget _buildBestOfferCard(Offer bestOffer, ComponentDetail component) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            color: const Color.fromRGBO(40, 40, 40, 0.7),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFF2A2A2A)),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final isMobile = constraints.maxWidth < 600;
+              return Flex(
+                direction: isMobile ? Axis.vertical : Axis.horizontal,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          component.name, // Nombre del componente
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          // Precio de la mejor oferta
+                          'Precio base: \$${bestOffer.price.toStringAsFixed(0)} MXN',
+                          style: const TextStyle(
+                            color: Color(0xFFA0A0A0),
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
+                          onPressed: () async {
+                            // ¡Abre el link real!
+                            final uri = Uri.tryParse(bestOffer.link);
+                            if (uri != null && await canLaunchUrl(uri)) {
+                              await launchUrl(
+                                uri,
+                                mode: LaunchMode.externalApplication,
+                              );
+                            }
+                          },
+                          icon: const Icon(
+                            Icons.shopping_cart,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                          label: Text(
+                            // Botón dice la tienda real
+                            'Ver en ${bestOffer.store}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFC7384D),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (!isMobile) const SizedBox(width: 24),
+                  if (isMobile) const SizedBox(height: 16),
+                  // Imagen
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child:
+                        (component.imageUrl != null &&
+                            component.imageUrl!.isNotEmpty)
+                        ? Image.network(
+                            component.imageUrl!,
+                            width: isMobile ? double.infinity : 192,
+                            height: isMobile ? 150 : 120,
+                            fit: BoxFit.contain,
+                            errorBuilder: (context, error, stackTrace) =>
+                                Container(
+                                  width: isMobile ? double.infinity : 192,
+                                  height: isMobile ? 150 : 120,
+                                  color: Colors.grey[800],
+                                  child: const Center(
+                                    child: Icon(
+                                      Icons.broken_image,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                ),
+                          )
+                        : Container(
+                            /* ... (placeholder de imagen sin cambios) ... */
+                            width: isMobile ? double.infinity : 192,
+                            height: isMobile ? 150 : 120,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[850],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Center(
+                              child: Icon(
+                                Icons.image_not_supported,
+                                size: 40,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Botón para una tienda (abre el link)
+  Widget _buildStoreButton(Offer offer) {
     return OutlinedButton(
-      onPressed: () {},
+      onPressed: () async {
+        final uri = Uri.tryParse(offer.link);
+        if (uri != null && await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+      },
       style: OutlinedButton.styleFrom(
         backgroundColor: const Color.fromRGBO(40, 40, 40, 0.7),
         foregroundColor: Colors.white,
@@ -659,22 +724,23 @@ class _ComponentDetailPageState extends State<ComponentDetailPage> {
         padding: const EdgeInsets.symmetric(vertical: 8),
       ),
       child: Text(
-        storeName,
+        offer.store,
         style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
         overflow: TextOverflow.ellipsis,
       ),
     );
   }
-} // <--- !!! MAKE SURE THIS CLOSING BRACE IS HERE !!!
+}
 
-// --- ReviewCard Class (Must be outside _ComponentDetailPageState) ---
+// --- ReviewCard Class (MODIFICADA) ---
+// Ahora usa el modelo ComponentReview
 class ReviewCard extends StatelessWidget {
-  final Review review;
+  final ComponentReview review; // <-- ¡Modelo actualizado!
   const ReviewCard({super.key, required this.review});
 
   @override
   Widget build(BuildContext context) {
-    // ... (ReviewCard implementation remains the same)
+    // (Esta la implementaremos después, al conectar los comentarios a reseñas)
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -682,14 +748,15 @@ class ReviewCard extends StatelessWidget {
           children: [
             CircleAvatar(
               radius: 20,
-              backgroundImage: NetworkImage(review.userAvatar),
+              // (Usamos un placeholder por ahora, la API no devuelve avatar)
+              child: Icon(Icons.person),
             ),
             const SizedBox(width: 12),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  review.userName,
+                  review.user.userUsername ?? 'Usuario', // <-- Dato real
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w500,
@@ -698,7 +765,8 @@ class ReviewCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  review.timeAgo,
+                  // (Calculamos el 'time ago' - podemos usar el paquete timeago)
+                  review.createdAt.toString(), // <-- Dato real
                   style: const TextStyle(
                     color: Color(0xFFA0A0A0),
                     fontSize: 14,
@@ -714,7 +782,9 @@ class ReviewCard extends StatelessWidget {
             return Padding(
               padding: const EdgeInsets.only(right: 2),
               child: Icon(
-                index < review.rating ? Icons.star : Icons.star_outline,
+                index < review.rating
+                    ? Icons.star
+                    : Icons.star_outline, // <-- Dato real
                 color: index < review.rating
                     ? const Color(0xFFC7384D)
                     : const Color(0xFFA0A0A0),
@@ -724,60 +794,23 @@ class ReviewCard extends StatelessWidget {
           }),
         ),
         const SizedBox(height: 12),
+        if (review.title != null && review.title!.isNotEmpty) ...[
+          Text(
+            review.title!, // <-- Dato real (título)
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
         Text(
-          review.comment,
+          review.content, // <-- Dato real
           style: const TextStyle(color: Color(0xFFE0E0E0), fontSize: 15),
         ),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            InkWell(
-              onTap: () {
-                /* TODO: Like comment logic */
-              },
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.thumb_up_outlined,
-                    color: Color(0xFFA0A0A0),
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${review.likes}',
-                    style: const TextStyle(
-                      color: Color(0xFFA0A0A0),
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 24),
-            InkWell(
-              onTap: () {
-                /* TODO: Dislike comment logic */
-              },
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.thumb_down_outlined,
-                    color: Color(0xFFA0A0A0),
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${review.dislikes}',
-                    style: const TextStyle(
-                      color: Color(0xFFA0A0A0),
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+        // (Likes/Dislikes en reseñas no están en la API, los quitamos)
       ],
     );
   }

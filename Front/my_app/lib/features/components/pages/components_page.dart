@@ -2,8 +2,11 @@
 
 import 'package:flutter/material.dart';
 import 'dart:ui';
-import 'package:my_app/models/component.dart'; // Importa el nuevo modelo
-import 'package:my_app/core/theme/app_theme.dart'; // Para estilos consistentes
+// ¡Importamos los nuevos modelos y el ApiClient!
+import 'package:my_app/models/component.dart';
+import 'package:my_app/core/api/api_client.dart';
+import 'package:my_app/core/theme/app_theme.dart';
+import 'package:provider/provider.dart';
 
 class ComponentsPage extends StatefulWidget {
   const ComponentsPage({super.key});
@@ -14,81 +17,33 @@ class ComponentsPage extends StatefulWidget {
 
 class _ComponentsPageState extends State<ComponentsPage>
     with SingleTickerProviderStateMixin {
-  // Necesario para la animación
+  // --- ¡DATOS MOCK ELIMINADOS! ---
+  // final List<Component> allComponents = [ ... ];
 
-  // Datos de ejemplo (mantenidos de tu código)
-  final List<Component> allComponents = [
-    Component(
-      id: 1,
-      name: 'NVMe 1TB Samsung 980',
-      categoria: 'Almacenamiento',
-      marca: 'Samsung',
-      uso: 'gaming',
-      price: 3200,
-      stores: ['Amazon', 'Mercado Libre'],
-    ),
-    Component(
-      id: 2,
-      name: 'Intel Core i5-13600K',
-      categoria: 'CPU',
-      marca: 'Intel',
-      uso: 'gaming',
-      price: 6900,
-      stores: ['Amazon'],
-    ),
-    Component(
-      id: 3,
-      name: 'Gigabyte B660 Motherboard',
-      categoria: 'Motherboard',
-      marca: 'Gigabyte',
-      uso: 'oficina',
-      price: 2800,
-      stores: ['Mercado Libre'],
-    ),
-    Component(
-      id: 4,
-      name: 'Corsair 16GB DDR4',
-      categoria: 'RAM',
-      marca: 'Corsair',
-      uso: 'gaming',
-      price: 1200,
-      stores: ['Amazon', 'Newegg'],
-    ),
-    Component(
-      id: 5,
-      name: 'MSI GTX 1660 Super',
-      categoria: 'GPU',
-      marca: 'MSI',
-      uso: 'gaming',
-      price: 5400,
-      stores: ['Amazon'],
-    ),
-    Component(
-      id: 6,
-      name: 'HP 500W PSU',
-      categoria: 'PSU',
-      marca: 'HP',
-      uso: 'oficina',
-      price: 900,
-      stores: ['Mercado Libre'],
-    ),
-  ];
-  // TODO: Reemplazar con FutureBuilder cuando tengamos endpoint
+  // --- NUEVO ESTADO PARA DATOS REALES ---
+  late Future<PaginatedComponentsResponse> _componentsFuture;
+  late ApiClient _apiClient;
 
-  // Estados de los filtros
-  String searchQuery = '';
-  String selectedUso = '';
+  // Estados de los filtros (se mantienen)
+  String searchQuery = ''; // (Aún no lo conectamos, pero se puede)
+  String selectedUso = ''; // (Tu API no filtra por 'uso', lo ignoraremos)
   String selectedCategoria = '';
   String selectedMarca = '';
   double budgetMax = 25000;
 
-  // Controlador de animación (mantenido de tu código)
+  // Animación (se mantiene)
   late AnimationController _animationController;
   late Animation<double> _animation;
 
   @override
   void initState() {
     super.initState();
+    // Obtiene el ApiClient del Provider
+    _apiClient = Provider.of<ApiClient>(context, listen: false);
+
+    // Inicia la primera carga de datos
+    _fetchData();
+
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 6),
@@ -99,47 +54,42 @@ class _ComponentsPageState extends State<ComponentsPage>
     );
   }
 
+  // --- NUEVA FUNCIÓN PARA OBTENER DATOS ---
+  void _fetchData() {
+    setState(() {
+      _componentsFuture = _apiClient.fetchComponents(
+        page: 1,
+        pageSize: 50, // Pedimos 50 por ahora
+        category: selectedCategoria.isNotEmpty ? selectedCategoria : null,
+        brand: selectedMarca.isNotEmpty ? selectedMarca : null,
+        maxPrice: budgetMax < 25000 ? budgetMax : null, // Solo si se ha movido
+        // search: searchQuery.isNotEmpty ? searchQuery : null, // (Se puede añadir)
+        sortBy: "price_asc",
+      );
+    });
+  }
+
   @override
   void dispose() {
     _animationController.dispose();
     super.dispose();
   }
 
-  // Lógica de filtrado (mantenida de tu código)
-  List<Component> get filteredComponents {
-    return allComponents.where((component) {
-      if (searchQuery.isNotEmpty) {
-        final query = searchQuery.toLowerCase();
-        if (!component.name.toLowerCase().contains(query) &&
-            !component.marca.toLowerCase().contains(query) &&
-            !component.categoria.toLowerCase().contains(query)) {
-          return false;
-        }
-      }
-      if (selectedUso.isNotEmpty && component.uso != selectedUso) return false;
-      if (selectedCategoria.isNotEmpty &&
-          component.categoria != selectedCategoria)
-        return false;
-      if (selectedMarca.isNotEmpty && component.marca != selectedMarca)
-        return false;
-      if (component.price > budgetMax) return false;
-      return true;
-    }).toList();
-  }
+  // --- LÓGICA DE FILTRADO (YA NO SE USA) ---
+  // List<Component> get filteredComponents { ... }
 
   @override
   Widget build(BuildContext context) {
     final bool isDesktop = MediaQuery.of(context).size.width >= 768;
-    final filteredList = filteredComponents;
-    final theme = Theme.of(context); // Obtenemos el tema
+    final theme = Theme.of(context);
 
-    // No usamos Scaffold, devolvemos el contenido
     return Stack(
       children: [
-        // Gradiente animado de fondo
+        // Gradiente animado (se mantiene)
         AnimatedBuilder(
           animation: _animation,
           builder: (context, child) {
+            /* ... sin cambios ... */
             return Container(
               decoration: BoxDecoration(
                 gradient: RadialGradient(
@@ -157,22 +107,18 @@ class _ComponentsPageState extends State<ComponentsPage>
             );
           },
         ),
-        // Contenido principal con SingleChildScrollView
+        // Contenido principal
         SingleChildScrollView(
           padding: EdgeInsets.symmetric(
-            horizontal: isDesktop ? 32 : 24, // Padding ajustado
+            horizontal: isDesktop ? 32 : 24,
             vertical: 24,
           ),
           child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start, // Alinea título a la izquierda
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Título de la página (más prominente)
+              // Título (se mantiene)
               Padding(
-                padding: EdgeInsets.only(
-                  bottom: 24.0,
-                  left: isDesktop ? 0 : 0,
-                ), // Ajuste padding título
+                padding: EdgeInsets.only(bottom: 24.0, left: isDesktop ? 0 : 0),
                 child: Text(
                   'Componentes',
                   style:
@@ -187,21 +133,49 @@ class _ComponentsPageState extends State<ComponentsPage>
                       ),
                 ),
               ),
-              // Sección de filtros
-              _buildFiltersSection(theme), // Pasamos el tema
-              const SizedBox(height: 32), // Aumentamos espacio
-              // Resultados o estado vacío
-              if (filteredList.isEmpty)
-                _buildEmptyState(theme) // Pasamos el tema
-              else
-                _buildComponentsGrid(filteredList, isDesktop, (component) {
-                  // Navega a la página de detalle con el ID
-                  Navigator.pushNamed(
-                    context,
-                    '/component-detail',
-                    arguments: component.id, // Pasamos el ID como argumento
-                  );
-                }),
+
+              // Sección de filtros (¡CONECTADA!)
+              _buildFiltersSection(theme),
+              const SizedBox(height: 32),
+
+              // --- ¡NUEVO: FUTURE BUILDER! ---
+              FutureBuilder<PaginatedComponentsResponse>(
+                future: _componentsFuture,
+                builder: (context, snapshot) {
+                  // 1. Estado de Carga
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(64.0),
+                        child: CircularProgressIndicator(),
+                      ),
+                    );
+                  }
+
+                  // 2. Estado de Error
+                  if (snapshot.hasError) {
+                    return _buildErrorState(theme, snapshot.error.toString());
+                  }
+
+                  // 3. Estado Vacío
+                  if (!snapshot.hasData || snapshot.data!.components.isEmpty) {
+                    return _buildEmptyState(theme);
+                  }
+
+                  // 4. Estado con Datos
+                  final components = snapshot.data!.components;
+                  return _buildComponentsGrid(components, isDesktop, (
+                    component,
+                  ) {
+                    // La navegación ya estaba correcta (pasa el ID)
+                    Navigator.pushNamed(
+                      context,
+                      '/component-detail',
+                      arguments: component.id,
+                    );
+                  });
+                },
+              ),
             ],
           ),
         ),
@@ -209,42 +183,25 @@ class _ComponentsPageState extends State<ComponentsPage>
     );
   }
 
-  // Widget para la sección de filtros
+  // Widget para la sección de filtros (MODIFICADO)
   Widget _buildFiltersSection(ThemeData theme) {
     return _GlassmorphismCard(
-      // Reutilizamos el estilo de tarjeta
       child: Wrap(
-        // Usamos Wrap para que los filtros se ajusten
-        spacing: 16, // Espacio horizontal
-        runSpacing: 16, // Espacio vertical
-        alignment: WrapAlignment.start, // Alineación
+        spacing: 16,
+        runSpacing: 16,
+        alignment: WrapAlignment.start,
         children: [
-          // Filtro de Uso
-          _buildFilterDropdown(
-            theme: theme,
-            label: 'Uso',
-            value: selectedUso,
-            items: ['', 'gaming', 'oficina'],
-            itemLabels: ['Todos', 'Gaming', 'Oficina'],
-            onChanged: (value) => setState(() => selectedUso = value ?? ''),
-            minWidth: 150, // Ancho mínimo
-          ),
+          // (Filtro 'Uso' eliminado porque la API no lo soporta)
 
-          // Filtro de Categoría
+          // Filtro de Categoría (CONECTADO)
           _buildFilterDropdown(
             theme: theme,
             label: 'Categoría',
             value: selectedCategoria,
             items: [
-              '',
-              'CPU',
-              'GPU',
-              'Motherboard',
-              'PSU',
-              'RAM',
-              'Almacenamiento',
-              'Tarjeta red',
-              'Gabinete',
+              '', 'CPU', 'GPU', 'Motherboard', 'PSU', 'RAM',
+              'storage', // (la API usa 'storage', no 'Almacenamiento')
+              'case', 'cooling', 'fan',
             ],
             itemLabels: [
               'Todas',
@@ -254,51 +211,54 @@ class _ComponentsPageState extends State<ComponentsPage>
               'PSU',
               'RAM',
               'Almacenamiento',
-              'Tarjeta red',
               'Gabinete',
+              'Enfriamiento',
+              'Ventiladores',
             ],
-            onChanged: (value) =>
-                setState(() => selectedCategoria = value ?? ''),
+            onChanged: (value) {
+              setState(() => selectedCategoria = value ?? '');
+              _fetchData(); // ¡Vuelve a cargar los datos!
+            },
             minWidth: 180,
           ),
 
-          // Filtro de Marca
+          // Filtro de Marca (CONECTADO)
           _buildFilterDropdown(
             theme: theme,
             label: 'Marca',
             value: selectedMarca,
+            // (Simplificado a las marcas de tu scraper)
             items: [
               '',
-              'Lenovo',
-              'Gigabyte',
-              'HP',
-              'Dell',
-              'ASUS',
-              'MSI',
-              'Samsung',
               'Intel',
+              'AMD',
+              'NVIDIA',
+              'Gigabyte',
+              'MSI',
+              'ASUS',
               'Corsair',
+              'Samsung',
             ],
             itemLabels: [
               'Todas',
-              'Lenovo',
-              'Gigabyte',
-              'HP',
-              'Dell',
-              'ASUS',
-              'MSI',
-              'Samsung',
               'Intel',
+              'AMD',
+              'NVIDIA',
+              'Gigabyte',
+              'MSI',
+              'ASUS',
               'Corsair',
+              'Samsung',
             ],
-            onChanged: (value) => setState(() => selectedMarca = value ?? ''),
+            onChanged: (value) {
+              setState(() => selectedMarca = value ?? '');
+              _fetchData(); // ¡Vuelve a cargar los datos!
+            },
             minWidth: 150,
           ),
 
-          // Filtro de Presupuesto (Slider)
-          // Usamos Flexible para que tome el espacio restante si es necesario
+          // Filtro de Presupuesto (CONECTADO)
           ConstrainedBox(
-            // Para darle un ancho mínimo y máximo
             constraints: const BoxConstraints(minWidth: 200, maxWidth: 300),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -307,7 +267,6 @@ class _ComponentsPageState extends State<ComponentsPage>
                   'Presupuesto (MXN) ≤ \$${budgetMax.toInt()}',
                   style:
                       theme.textTheme.labelMedium?.copyWith(
-                        // Estilo de etiqueta
                         color: theme.colorScheme.secondary,
                       ) ??
                       TextStyle(
@@ -315,30 +274,30 @@ class _ComponentsPageState extends State<ComponentsPage>
                         fontSize: 12,
                       ),
                 ),
-                const SizedBox(height: 4), // Menos espacio
+                const SizedBox(height: 4),
                 SliderTheme(
-                  // Aplicamos el tema primario al Slider
                   data: SliderTheme.of(context).copyWith(
                     activeTrackColor: theme.primaryColor,
                     inactiveTrackColor: theme.dividerColor.withOpacity(0.5),
                     thumbColor: theme.primaryColor,
                     overlayColor: theme.primaryColor.withOpacity(0.2),
-                    trackHeight: 2.0, // Track más delgado
+                    trackHeight: 2.0,
                     thumbShape: const RoundSliderThumbShape(
                       enabledThumbRadius: 8.0,
-                    ), // Pulgar más pequeño
+                    ),
                     overlayShape: const RoundSliderOverlayShape(
                       overlayRadius: 16.0,
-                    ), // Overlay más pequeño
+                    ),
                   ),
                   child: Slider(
                     value: budgetMax,
                     min: 100,
                     max: 25000,
-                    divisions: 249, // Mantenemos divisiones
-                    label:
-                        '\$${budgetMax.toInt()}', // Etiqueta opcional al arrastrar
+                    divisions: 249,
+                    label: '\$${budgetMax.toInt()}',
                     onChanged: (value) => setState(() => budgetMax = value),
+                    // ¡Vuelve a cargar los datos AL SOLTAR el slider!
+                    onChangeEnd: (value) => _fetchData(),
                   ),
                 ),
               ],
@@ -349,7 +308,7 @@ class _ComponentsPageState extends State<ComponentsPage>
     );
   }
 
-  // Widget helper para Dropdowns de filtro
+  // (Helper _buildFilterDropdown se mantiene igual)
   Widget _buildFilterDropdown({
     required ThemeData theme,
     required String label,
@@ -357,15 +316,14 @@ class _ComponentsPageState extends State<ComponentsPage>
     required List<String> items,
     required List<String> itemLabels,
     required ValueChanged<String?> onChanged,
-    double minWidth = 150, // Ancho mínimo por defecto
+    double minWidth = 150,
   }) {
+    // ... (sin cambios)
     return ConstrainedBox(
-      // Para controlar el ancho
       constraints: BoxConstraints(minWidth: minWidth),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize
-            .min, // Para que la columna no ocupe más alto del necesario
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             label,
@@ -376,35 +334,27 @@ class _ComponentsPageState extends State<ComponentsPage>
                 TextStyle(color: theme.colorScheme.secondary, fontSize: 12),
           ),
           const SizedBox(height: 8),
-          // Dropdown con estilo mejorado
           Container(
-            height: 48, // Altura fija para alinear con TextFields
+            height: 48,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
               color:
-                  theme.inputDecorationTheme.fillColor ??
-                  Colors.grey.shade900, // Color de fondo del tema
-              borderRadius: BorderRadius.circular(
-                12,
-              ), // Borde redondeado del tema
-              border: Border.all(
-                color: Colors.transparent,
-              ), // Sin borde visible inicial
+                  theme.inputDecorationTheme.fillColor ?? Colors.grey.shade900,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.transparent),
             ),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
                 value: value,
                 isExpanded: true,
-                dropdownColor: theme.cardColor.withOpacity(
-                  0.95,
-                ), // Fondo del dropdown (puede ser cardColor)
+                dropdownColor: theme.cardColor.withOpacity(0.95),
                 icon: Icon(
                   Icons.arrow_drop_down,
                   color: theme.colorScheme.secondary,
-                ), // Color del icono
+                ),
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: Colors.white,
-                ), // Estilo del texto seleccionado
+                ),
                 items: List.generate(items.length, (index) {
                   return DropdownMenuItem(
                     value: items[index],
@@ -412,7 +362,7 @@ class _ComponentsPageState extends State<ComponentsPage>
                       itemLabels[index],
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: Colors.white,
-                      ), // Estilo de los items
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                   );
@@ -426,11 +376,12 @@ class _ComponentsPageState extends State<ComponentsPage>
     );
   }
 
-  // Widget para la cuadrícula de componentes
+  // Widget para la cuadrícula (MODIFICADO)
+  // Ahora recibe List<ComponentCard>
   Widget _buildComponentsGrid(
-    List<Component> components,
+    List<ComponentCard> components, // <-- ¡Modelo actualizado!
     bool isDesktop,
-    Function(Component) onTapped,
+    Function(ComponentCard) onTapped, // <-- ¡Modelo actualizado!
   ) {
     return GridView.builder(
       shrinkWrap: true,
@@ -447,34 +398,25 @@ class _ComponentsPageState extends State<ComponentsPage>
       ),
       itemCount: components.length,
       itemBuilder: (context, index) {
-        // --- MODIFICACIÓN AQUÍ: Envolvemos en InkWell ---
+        final component = components[index];
         return InkWell(
-          onTap: () {
-            // Modifica el onTap para usar Navigator.pushNamed directamente
-            Navigator.pushNamed(
-              context,
-              '/component-detail',
-              arguments: components[index], // <-- PASA EL OBJETO COMPLETO
-            );
-          },
+          onTap: () => onTapped(component), // Llama al handler
           borderRadius: BorderRadius.circular(12.0),
-          child: ComponentCard(component: components[index]),
+          child: ComponentCardWidget(
+            component: component,
+          ), // Usa el nuevo widget
         );
-        // --- FIN MODIFICACIÓN ---
       },
     );
   }
 
-  // Widget para estado vacío
+  // (Widget _buildEmptyState se mantiene igual)
   Widget _buildEmptyState(ThemeData theme) {
+    // ... (sin cambios)
     return Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          vertical: 64,
-          horizontal: 32,
-        ), // Más padding
+        padding: const EdgeInsets.symmetric(vertical: 64, horizontal: 32),
         child: Column(
-          // Usamos columna para icono y texto
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
@@ -484,10 +426,9 @@ class _ComponentsPageState extends State<ComponentsPage>
             ),
             const SizedBox(height: 16),
             Text(
-              'No se encontraron componentes', // Texto más claro
+              'No se encontraron componentes',
               style:
                   theme.textTheme.titleMedium?.copyWith(
-                    // titleMedium para mensaje principal
                     color: theme.colorScheme.secondary,
                   ) ??
                   TextStyle(color: theme.colorScheme.secondary, fontSize: 16),
@@ -495,10 +436,51 @@ class _ComponentsPageState extends State<ComponentsPage>
             ),
             const SizedBox(height: 8),
             Text(
-              'Intenta ajustar los filtros o la búsqueda.', // Texto secundario
+              'Intenta ajustar los filtros o la búsqueda.',
               style:
                   theme.textTheme.bodySmall?.copyWith(
-                    // bodySmall
+                    color: theme.colorScheme.secondary.withOpacity(0.7),
+                  ) ??
+                  TextStyle(
+                    color: theme.colorScheme.secondary.withOpacity(0.7),
+                    fontSize: 12,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- ¡NUEVO WIDGET DE ERROR! ---
+  Widget _buildErrorState(ThemeData theme, String error) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 64, horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.cloud_off,
+              size: 64,
+              color: theme.primaryColor.withOpacity(0.7),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Error al cargar componentes',
+              style:
+                  theme.textTheme.titleMedium?.copyWith(
+                    color: theme.colorScheme.secondary,
+                  ) ??
+                  TextStyle(color: theme.colorScheme.secondary, fontSize: 16),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              error, // Muestra el error real de la API
+              style:
+                  theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.secondary.withOpacity(0.7),
                   ) ??
                   TextStyle(
@@ -514,92 +496,134 @@ class _ComponentsPageState extends State<ComponentsPage>
   }
 }
 
-// --- TARJETA DE COMPONENTE (Estilo ajustado) ---
-class ComponentCard extends StatelessWidget {
-  final Component component;
+// --- TARJETA DE COMPONENTE (MODIFICADA) ---
+// (Renombrada a ComponentCardWidget para evitar conflicto con el modelo)
+// Ahora usa el modelo ComponentCard
+class ComponentCardWidget extends StatelessWidget {
+  final ComponentCard component; // <-- ¡Modelo actualizado!
 
-  const ComponentCard({super.key, required this.component});
+  const ComponentCardWidget({super.key, required this.component});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return _GlassmorphismCard(
-      // Reutilizamos el estilo de tarjeta base
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment:
-            MainAxisAlignment.spaceBetween, // Para empujar precio/tiendas abajo
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Info Superior (Categoría, Nombre, Marca)
+          // Info Superior
+          if (component.imageUrl != null)
+            Image.network(
+              component.imageUrl!,
+              height: 120, // Altura fija para la imagen
+              width: double.infinity,
+              fit: BoxFit.cover,
+              // Placeholder mientras carga
+              loadingBuilder: (context, child, progress) {
+                return progress == null
+                    ? child
+                    : Container(
+                        height: 120,
+                        color: Colors.grey[850],
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            value: progress.expectedTotalBytes != null
+                                ? progress.cumulativeBytesLoaded /
+                                      progress.expectedTotalBytes!
+                                : null,
+                          ),
+                        ),
+                      );
+              },
+              // Error si no puede cargar
+              errorBuilder: (context, error, stackTrace) => Container(
+                height: 120,
+                color: Colors.grey[850],
+                child: Icon(Icons.broken_image, color: Colors.grey[700]),
+              ),
+            )
+          else
+            Container(
+              // Placeholder si no hay imagen
+              height: 120,
+              width: double.infinity,
+              color: Colors.grey[850],
+              child: Icon(Icons.no_photography, color: Colors.grey[700]),
+            ),
+
+          const SizedBox(height: 16), // Espacio entre imagen y texto
+          // --- FIN DE CORRECCIÓN! --
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                component.categoria,
+                component.category, // <-- Dato real
                 style:
                     theme.textTheme.bodySmall?.copyWith(
-                      // bodySmall para categoría
                       color: theme.colorScheme.secondary,
                     ) ??
                     TextStyle(color: theme.colorScheme.secondary, fontSize: 12),
               ),
               const SizedBox(height: 8),
               Text(
-                component.name,
+                component.name, // <-- Dato real
                 style:
                     theme.textTheme.titleMedium?.copyWith(
-                      // titleMedium para nombre
                       color: Colors.white,
-                      fontWeight: FontWeight.bold, // Negrita
+                      fontWeight: FontWeight.bold,
                     ) ??
                     const TextStyle(
                       color: Colors.white,
-                      fontSize: 16, // Tamaño base
+                      fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
-                maxLines: 2, // Permitir 2 líneas
-                overflow: TextOverflow.ellipsis, // Cortar si es más largo
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 4),
               Text(
-                component.marca,
+                component.brand ?? 'Sin marca', // <-- Dato real
                 style:
                     theme.textTheme.bodyMedium?.copyWith(
-                      // bodyMedium para marca
                       color: theme.colorScheme.secondary,
                     ) ??
                     TextStyle(color: theme.colorScheme.secondary, fontSize: 14),
               ),
             ],
           ),
-          const SizedBox(height: 16), // Espacio entre info y precio/tiendas
-          // Info Inferior (Precio, Tiendas)
+          const SizedBox(height: 16),
+          // Info Inferior
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '\$${component.price.toStringAsFixed(0)} MXN', // Añadir MXN
+                // Maneja precio nulo
+                component.price != null
+                    ? '\$${component.price!.toStringAsFixed(0)} MXN'
+                    : 'No disponible',
                 style:
                     theme.textTheme.headlineSmall?.copyWith(
-                      // headlineSmall para precio
-                      color: theme.primaryColor,
+                      color: component.price != null
+                          ? theme.primaryColor
+                          : Colors.grey,
                       fontWeight: FontWeight.bold,
                     ) ??
                     TextStyle(
-                      color: theme.primaryColor,
-                      fontSize: 20, // Ligeramente más grande
+                      color: component.price != null
+                          ? theme.primaryColor
+                          : Colors.grey,
+                      fontSize: 20,
                       fontWeight: FontWeight.bold,
                     ),
               ),
               const SizedBox(height: 4),
               Text(
-                'Disponible en: ${component.stores.join(', ')}',
+                // Maneja tienda nula
+                'Disponible en: ${component.store ?? 'N/A'}',
                 style:
                     theme.textTheme.bodySmall?.copyWith(
-                      // bodySmall para tiendas
-                      color: theme.colorScheme.secondary.withOpacity(
-                        0.8,
-                      ), // Más sutil
+                      color: theme.colorScheme.secondary.withOpacity(0.8),
                     ) ??
                     TextStyle(
                       color: theme.colorScheme.secondary.withOpacity(0.8),
@@ -616,14 +640,14 @@ class ComponentCard extends StatelessWidget {
   }
 }
 
-// --- WIDGET HELPER REUTILIZADO ---
-// Tarjeta Glassmorphism (Padding estandarizado)
+// (Widget _GlassmorphismCard se mantiene igual)
 class _GlassmorphismCard extends StatelessWidget {
   final Widget child;
   const _GlassmorphismCard({required this.child});
 
   @override
   Widget build(BuildContext context) {
+    // ... (sin cambios)
     final theme = Theme.of(context);
     return ClipRRect(
       borderRadius: BorderRadius.circular(12.0),
@@ -635,11 +659,11 @@ class _GlassmorphismCard extends StatelessWidget {
                 (theme.cardColor == Colors.transparent
                         ? theme.colorScheme.surface
                         : theme.cardColor)
-                    .withOpacity(0.7), // Usa cardColor o surface
+                    .withOpacity(0.7),
             borderRadius: BorderRadius.circular(12.0),
             border: Border.all(color: theme.dividerColor.withOpacity(0.5)),
           ),
-          padding: const EdgeInsets.all(24.0), // Padding estándar
+          padding: const EdgeInsets.all(24.0),
           child: child,
         ),
       ),

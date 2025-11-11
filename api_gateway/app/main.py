@@ -11,7 +11,6 @@ from app.routers.users_router import router as users_router
 from app.routers.posts_router import router as posts_router
 from app.routers.components_router import router as components_router
 from app.routers.builds_router import router as builds_router
-from app.routers.pricing_router import router as pricing_router
 from app.routers.benchmark_router import router as benchmark_router
 from app.routers.search_router import router as search_router
 
@@ -43,7 +42,6 @@ app.include_router(users_router)
 app.include_router(posts_router)
 app.include_router(components_router)
 app.include_router(builds_router)
-app.include_router(pricing_router)
 app.include_router(benchmark_router)
 app.include_router(search_router)
 

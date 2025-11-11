@@ -1,3 +1,4 @@
+// lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:my_app/core/api/api_client.dart';
 import 'package:my_app/core/theme/app_theme.dart';
@@ -19,7 +20,8 @@ import 'package:my_app/features/benchmarks/pages/benchmarks_page.dart';
 import 'package:my_app/landing/pages/landing_page.dart';
 import 'package:my_app/providers/auth_provider.dart';
 import 'package:provider/provider.dart';
-import 'package:my_app/models/component.dart';
+// ¡YA NO IMPORTAMOS EL MODELO MOCK AQUÍ!
+// import 'package:my_app/models/component.dart';
 
 void main() {
   runApp(
@@ -57,29 +59,32 @@ class MyApp extends StatelessWidget {
         '/my-posts': (context) => const MainLayout(child: MyPostsPage()),
         '/my-builds': (context) => const MainLayout(child: MyBuildsPage()),
         '/settings': (context) => const MainLayout(child: SettingsPage()),
-        '/builds': (context) => MainLayout(child: BuildsPage()),
+        '/builds': (context) => const MainLayout(child: BuildsPage()),
         '/builds/create': (context) =>
             MainLayout(child: BuildConstructorPage()),
         '/benchmarks': (context) => const MainLayout(child: BenchmarksPage()),
-        '/components': (context) => MainLayout(child: ComponentsPage()),
-        '/component-detail': (context) {
-          final component =
-              ModalRoute.of(context)?.settings.arguments as Component?;
+        '/components': (context) => const MainLayout(child: ComponentsPage()),
 
-          if (component == null) {
-            return MainLayout(
+        // --- ¡RUTA CORREGIDA! ---
+        // Ahora espera un 'int' (el ID) en lugar de un objeto 'Component'
+        '/component-detail': (context) {
+          final componentId =
+              ModalRoute.of(context)?.settings.arguments as int?;
+
+          if (componentId == null) {
+            return const MainLayout(
               child: Center(
-                child: Text(
-                  'Error: Componente no encontrado o no proporcionado',
-                ),
+                child: Text('Error: ID de componente no proporcionado'),
               ),
             );
           }
-
-          return MainLayout(child: ComponentDetailPage(component: component));
+          // Pasa el ID a la página de detalle
+          return MainLayout(
+            child: ComponentDetailPage(componentId: componentId),
+          );
         },
+        // --- FIN DE LA CORRECCIÓN ---
       },
-
       onUnknownRoute: (settings) {
         return MaterialPageRoute(
           builder: (context) =>

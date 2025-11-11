@@ -9,7 +9,6 @@ SERVICE_CONFIG = {
     "posts": os.getenv("POST_SERVICE_URL", "http://posts-service:8002"),
     "component": os.getenv("COMPONENT_SERVICE_URL", "http://component-service:8003"),
     "build": os.getenv("BUILD_SERVICE_URL", "http://build-service:8004"),
-    "price": os.getenv("PRICE_SERVICE_URL", "http://pricing-service:8005"),
     "benchmark": os.getenv("BENCHMARK_SERVICE_URL", "http://benchmark-service:8006"),
 }
 
