@@ -364,53 +364,52 @@ class MultiStoreScraper:
             print(f"❌ Error al iniciar Chrome: {e}")
             raise
 
-        # (extract_brand - Copiado 1:1)
     def extract_brand(self, product_name):
-        """Extraer marca del nombre del producto (versión mejorada)."""
+            """Extraer marca del nombre del producto (versión mejorada)."""
+            
+            name_lower = product_name.lower()
 
-        name_lower = product_name.lower()
+            # --- Marcas Principales (CPU/GPU) ---
+            if 'intel' in name_lower: return 'Intel'
+            if 'amd' in name_lower or 'ryzen' in name_lower or 'radeon' in name_lower: return 'AMD'
+            if 'nvidia' in name_lower or 'geforce' in name_lower or 'rtx' in name_lower or 'gtx' in name_lower: return 'NVIDIA'
+            
+            # --- Marcas de Fabricantes (Ensambladoras) ---
+            if 'asus' in name_lower: return 'ASUS'
+            if 'msi' in name_lower: return 'MSI'
+            if 'gigabyte' in name_lower: return 'Gigabyte'
+            if 'evga' in name_lower: return 'EVGA'
+            if 'zotac' in name_lower: return 'Zotac'
+            if 'sapphire' in name_lower: return 'Sapphire'
+            if 'xfx' in name_lower: return 'XFX'
+            if 'asrock' in name_lower: return 'ASRock'
+            
+            # --- Marcas de Otros Componentes ---
+            if 'corsair' in name_lower: return 'Corsair'
+            if 'kingston' in name_lower or 'fury' in name_lower: return 'Kingston'
+            if 'samsung' in name_lower: return 'Samsung'
+            if 'western digital' in name_lower or 'wd' in name_lower: return 'Western Digital'
+            if 'seagate' in name_lower: return 'Seagate'
+            if 'crucial' in name_lower: return 'Crucial'
+            if 'noctua' in name_lower: return 'Noctua'
+            if 'be quiet' in name_lower: return 'Be Quiet!'
+            if 'nzxt' in name_lower: return 'NZXT'
+            if 'thermaltake' in name_lower: return 'Thermaltake'
+            if 'cooler master' in name_lower: return 'Cooler Master'
+            if 'lian li' in name_lower: return 'Lian Li'
+            
+            # --- Marcas de Laptops ---
+            if 'hp' in name_lower: return 'HP'
+            if 'dell' in name_lower: return 'Dell'
+            if 'lenovo' in name_lower: return 'Lenovo'
+            if 'acer' in name_lower: return 'Acer'
+            if 'razer' in name_lower: return 'Razer'
+            
+            if 'microsoft' in name_lower: return 'Microsoft'
 
-        # --- Marcas Principales (CPU/GPU) ---
-        if 'intel' in name_lower: return 'Intel'
-        if 'amd' in name_lower or 'ryzen' in name_lower or 'radeon' in name_lower: return 'AMD'
-        if 'nvidia' in name_lower or 'geforce' in name_lower or 'rtx' in name_lower or 'gtx' in name_lower: return 'NVIDIA'
-
-        # --- Marcas de Fabricantes (Ensambladoras) ---
-        if 'asus' in name_lower: return 'ASUS'
-        if 'msi' in name_lower: return 'MSI'
-        if 'gigabyte' in name_lower: return 'Gigabyte'
-        if 'evga' in name_lower: return 'EVGA'
-        if 'zotac' in name_lower: return 'Zotac'
-        if 'sapphire' in name_lower: return 'Sapphire'
-        if 'xfx' in name_lower: return 'XFX'
-        if 'asrock' in name_lower: return 'ASRock'
-
-        # --- Marcas de Otros Componentes ---
-        if 'corsair' in name_lower: return 'Corsair'
-        if 'kingston' in name_lower or 'fury' in name_lower: return 'Kingston'
-        if 'samsung' in name_lower: return 'Samsung'
-        if 'western digital' in name_lower or 'wd' in name_lower: return 'Western Digital'
-        if 'seagate' in name_lower: return 'Seagate'
-        if 'crucial' in name_lower: return 'Crucial'
-        if 'noctua' in name_lower: return 'Noctua'
-        if 'be quiet' in name_lower: return 'Be Quiet!'
-        if 'nzxt' in name_lower: return 'NZXT'
-        if 'thermaltake' in name_lower: return 'Thermaltake'
-        if 'cooler master' in name_lower: return 'Cooler Master'
-        if 'lian li' in name_lower: return 'Lian Li'
-
-        # --- Marcas de Laptops ---
-        if 'hp' in name_lower: return 'HP'
-        if 'dell' in name_lower: return 'Dell'
-        if 'lenovo' in name_lower: return 'Lenovo'
-        if 'acer' in name_lower: return 'Acer'
-        if 'razer' in name_lower: return 'Razer'
-
-        if 'microsoft' in name_lower: return 'Microsoft'
-
-        return "N/A" # Si no encuentra nada
+            return "N/A" # Si no encuentra nada
     # (scrape_amazon - Copiado 1:1)
-    def scrape_amazon(self, search_term, category_name, max_pages=2):
+    def scrape_amazon(self, search_term, category_name, max_pages=5):
         """Scraper para Amazon México"""
         print(f"\n🔍 {category_name}: '{search_term}'")
         products = []
@@ -655,7 +654,7 @@ class MultiStoreScraper:
 
 
     # --- MODIFICADO: 'run' ahora es no-interactivo ---
-    def run(self, max_pages_per_search: int = 2):
+    def run(self, max_pages_per_search: int = 5):
         """
         Ejecutar scraper completo y guardar en DB.
         """
@@ -716,7 +715,7 @@ async def main():
         
         # 4. Ejecutar (ej. 2 páginas por búsqueda)
         # (Este método NO es async, se ejecuta de forma síncrona)
-        scraper.run(max_pages_per_search=2)
+        scraper.run(max_pages_per_search=5)
         
         # 5. Invalidar la caché de Redis
         print("\n" + "="*70)

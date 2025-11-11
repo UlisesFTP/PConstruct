@@ -2,7 +2,6 @@
 
 import 'package:flutter/material.dart';
 import 'dart:ui';
-// ¡Importamos los nuevos modelos y el ApiClient!
 import 'package:my_app/models/component.dart';
 import 'package:my_app/core/api/api_client.dart';
 import 'package:my_app/core/theme/app_theme.dart';
@@ -17,32 +16,28 @@ class ComponentsPage extends StatefulWidget {
 
 class _ComponentsPageState extends State<ComponentsPage>
     with SingleTickerProviderStateMixin {
-  // --- ¡DATOS MOCK ELIMINADOS! ---
-  // final List<Component> allComponents = [ ... ];
-
-  // --- NUEVO ESTADO PARA DATOS REALES ---
   late Future<PaginatedComponentsResponse> _componentsFuture;
   late ApiClient _apiClient;
 
-  // Estados de los filtros (se mantienen)
-  String searchQuery = ''; // (Aún no lo conectamos, pero se puede)
-  String selectedUso = ''; // (Tu API no filtra por 'uso', lo ignoraremos)
+  // --- ¡NUEVO ESTADO PARA PAGINACIÓN! ---
+  int _currentPage = 1;
+  int _totalItems = 0;
+  final int _pageSize = 50; // Mostraremos 50 por página
+  // ------------------------------------
+
+  // Estados de los filtros
   String selectedCategoria = '';
   String selectedMarca = '';
   double budgetMax = 25000;
 
-  // Animación (se mantiene)
   late AnimationController _animationController;
   late Animation<double> _animation;
 
   @override
   void initState() {
     super.initState();
-    // Obtiene el ApiClient del Provider
     _apiClient = Provider.of<ApiClient>(context, listen: false);
-
-    // Inicia la primera carga de datos
-    _fetchData();
+    _fetchData(page: 1); // Carga la primera página
 
     _animationController = AnimationController(
       vsync: this,
@@ -54,16 +49,16 @@ class _ComponentsPageState extends State<ComponentsPage>
     );
   }
 
-  // --- NUEVA FUNCIÓN PARA OBTENER DATOS ---
-  void _fetchData() {
+  // --- FUNCIÓN DE CARGA DE DATOS (MODIFICADA) ---
+  void _fetchData({required int page}) {
     setState(() {
+      _currentPage = page; // Actualiza la página actual
       _componentsFuture = _apiClient.fetchComponents(
-        page: 1,
-        pageSize: 50, // Pedimos 50 por ahora
+        page: _currentPage,
+        pageSize: _pageSize,
         category: selectedCategoria.isNotEmpty ? selectedCategoria : null,
         brand: selectedMarca.isNotEmpty ? selectedMarca : null,
-        maxPrice: budgetMax < 25000 ? budgetMax : null, // Solo si se ha movido
-        // search: searchQuery.isNotEmpty ? searchQuery : null, // (Se puede añadir)
+        maxPrice: (budgetMax < 25000) ? budgetMax : null,
         sortBy: "price_asc",
       );
     });
@@ -75,9 +70,6 @@ class _ComponentsPageState extends State<ComponentsPage>
     super.dispose();
   }
 
-  // --- LÓGICA DE FILTRADO (YA NO SE USA) ---
-  // List<Component> get filteredComponents { ... }
-
   @override
   Widget build(BuildContext context) {
     final bool isDesktop = MediaQuery.of(context).size.width >= 768;
@@ -85,11 +77,10 @@ class _ComponentsPageState extends State<ComponentsPage>
 
     return Stack(
       children: [
-        // Gradiente animado (se mantiene)
+        // Gradiente animado
         AnimatedBuilder(
           animation: _animation,
           builder: (context, child) {
-            /* ... sin cambios ... */
             return Container(
               decoration: BoxDecoration(
                 gradient: RadialGradient(
@@ -116,7 +107,7 @@ class _ComponentsPageState extends State<ComponentsPage>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Título (se mantiene)
+              // Título
               Padding(
                 padding: EdgeInsets.only(bottom: 24.0, left: isDesktop ? 0 : 0),
                 child: Text(
@@ -134,15 +125,14 @@ class _ComponentsPageState extends State<ComponentsPage>
                 ),
               ),
 
-              // Sección de filtros (¡CONECTADA!)
+              // Sección de filtros
               _buildFiltersSection(theme),
               const SizedBox(height: 32),
 
-              // --- ¡NUEVO: FUTURE BUILDER! ---
+              // --- FUTURE BUILDER (MODIFICADO) ---
               FutureBuilder<PaginatedComponentsResponse>(
                 future: _componentsFuture,
                 builder: (context, snapshot) {
-                  // 1. Estado de Carga
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(
                       child: Padding(
@@ -152,28 +142,36 @@ class _ComponentsPageState extends State<ComponentsPage>
                     );
                   }
 
-                  // 2. Estado de Error
                   if (snapshot.hasError) {
                     return _buildErrorState(theme, snapshot.error.toString());
                   }
 
-                  // 3. Estado Vacío
                   if (!snapshot.hasData || snapshot.data!.components.isEmpty) {
                     return _buildEmptyState(theme);
                   }
 
-                  // 4. Estado con Datos
-                  final components = snapshot.data!.components;
-                  return _buildComponentsGrid(components, isDesktop, (
-                    component,
-                  ) {
-                    // La navegación ya estaba correcta (pasa el ID)
-                    Navigator.pushNamed(
-                      context,
-                      '/component-detail',
-                      arguments: component.id,
-                    );
-                  });
+                  // ¡Datos reales!
+                  final response = snapshot.data!;
+                  final components = response.components;
+                  // Actualiza el total de items
+                  _totalItems = response.totalItems;
+                  final totalPages = (_totalItems / _pageSize).ceil();
+
+                  return Column(
+                    children: [
+                      // Cuadrícula de componentes
+                      _buildComponentsGrid(components, isDesktop, (component) {
+                        Navigator.pushNamed(
+                          context,
+                          '/component-detail',
+                          arguments: component.id,
+                        );
+                      }),
+                      const SizedBox(height: 32),
+                      // --- ¡NUEVO WIDGET DE PAGINACIÓN! ---
+                      _buildPaginationControls(totalPages),
+                    ],
+                  );
                 },
               ),
             ],
@@ -183,7 +181,63 @@ class _ComponentsPageState extends State<ComponentsPage>
     );
   }
 
-  // Widget para la sección de filtros (MODIFICADO)
+  // --- ¡NUEVO WIDGET DE CONTROLES DE PAGINACIÓN! ---
+  Widget _buildPaginationControls(int totalPages) {
+    if (totalPages <= 1)
+      return const SizedBox.shrink(); // No mostrar si solo hay 1 página
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        // Botón Anterior
+        ElevatedButton(
+          onPressed: _currentPage <= 1
+              ? null
+              : () {
+                  _fetchData(page: _currentPage - 1);
+                },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Theme.of(context).primaryColor,
+            disabledBackgroundColor: Colors.grey[800],
+          ),
+          child: const Text(
+            'Anterior',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+        ),
+
+        // Indicador de página
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            'Página $_currentPage / $totalPages',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+
+        // Botón Siguiente
+        ElevatedButton(
+          onPressed: _currentPage >= totalPages
+              ? null
+              : () {
+                  _fetchData(page: _currentPage + 1);
+                },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Theme.of(context).primaryColor,
+            disabledBackgroundColor: Colors.grey[800],
+          ),
+          child: const Text(
+            'Siguiente',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildFiltersSection(ThemeData theme) {
     return _GlassmorphismCard(
       child: Wrap(
@@ -191,17 +245,24 @@ class _ComponentsPageState extends State<ComponentsPage>
         runSpacing: 16,
         alignment: WrapAlignment.start,
         children: [
-          // (Filtro 'Uso' eliminado porque la API no lo soporta)
-
-          // Filtro de Categoría (CONECTADO)
+          // Filtro de Categoría
           _buildFilterDropdown(
             theme: theme,
             label: 'Categoría',
             value: selectedCategoria,
             items: [
-              '', 'CPU', 'GPU', 'Motherboard', 'PSU', 'RAM',
-              'storage', // (la API usa 'storage', no 'Almacenamiento')
-              'case', 'cooling', 'fan',
+              '',
+              'CPU',
+              'GPU',
+              'Motherboard',
+              'PSU',
+              'RAM',
+              'storage',
+              'case',
+              'cooling',
+              'fan',
+              'Laptop',
+              'Laptop_Gamer',
             ],
             itemLabels: [
               'Todas',
@@ -214,20 +275,21 @@ class _ComponentsPageState extends State<ComponentsPage>
               'Gabinete',
               'Enfriamiento',
               'Ventiladores',
+              'Laptop',
+              'Laptop Gamer',
             ],
             onChanged: (value) {
               setState(() => selectedCategoria = value ?? '');
-              _fetchData(); // ¡Vuelve a cargar los datos!
+              _fetchData(page: 1); // Reinicia a la página 1 al filtrar
             },
             minWidth: 180,
           ),
 
-          // Filtro de Marca (CONECTADO)
+          // Filtro de Marca
           _buildFilterDropdown(
             theme: theme,
             label: 'Marca',
             value: selectedMarca,
-            // (Simplificado a las marcas de tu scraper)
             items: [
               '',
               'Intel',
@@ -238,6 +300,21 @@ class _ComponentsPageState extends State<ComponentsPage>
               'ASUS',
               'Corsair',
               'Samsung',
+              'Kingston',
+              'Western Digital',
+              'Seagate',
+              'EVGA',
+              'Noctua',
+              'Be Quiet!',
+              'NZXT',
+              'Thermaltake',
+              'Cooler Master',
+              'Lian Li',
+              'HP',
+              'Dell',
+              'Lenovo',
+              'Acer',
+              'Razer',
             ],
             itemLabels: [
               'Todas',
@@ -249,15 +326,30 @@ class _ComponentsPageState extends State<ComponentsPage>
               'ASUS',
               'Corsair',
               'Samsung',
+              'Kingston',
+              'Western Digital',
+              'Seagate',
+              'EVGA',
+              'Noctua',
+              'Be Quiet!',
+              'NZXT',
+              'Thermaltake',
+              'Cooler Master',
+              'Lian Li',
+              'HP',
+              'Dell',
+              'Lenovo',
+              'Acer',
+              'Razer',
             ],
             onChanged: (value) {
               setState(() => selectedMarca = value ?? '');
-              _fetchData(); // ¡Vuelve a cargar los datos!
+              _fetchData(page: 1); // Reinicia a la página 1 al filtrar
             },
             minWidth: 150,
           ),
 
-          // Filtro de Presupuesto (CONECTADO)
+          // Filtro de Presupuesto
           ConstrainedBox(
             constraints: const BoxConstraints(minWidth: 200, maxWidth: 300),
             child: Column(
@@ -296,8 +388,8 @@ class _ComponentsPageState extends State<ComponentsPage>
                     divisions: 249,
                     label: '\$${budgetMax.toInt()}',
                     onChanged: (value) => setState(() => budgetMax = value),
-                    // ¡Vuelve a cargar los datos AL SOLTAR el slider!
-                    onChangeEnd: (value) => _fetchData(),
+                    onChangeEnd: (value) =>
+                        _fetchData(page: 1), // Reinicia a página 1
                   ),
                 ),
               ],
@@ -318,7 +410,6 @@ class _ComponentsPageState extends State<ComponentsPage>
     required ValueChanged<String?> onChanged,
     double minWidth = 150,
   }) {
-    // ... (sin cambios)
     return ConstrainedBox(
       constraints: BoxConstraints(minWidth: minWidth),
       child: Column(
@@ -376,12 +467,11 @@ class _ComponentsPageState extends State<ComponentsPage>
     );
   }
 
-  // Widget para la cuadrícula (MODIFICADO)
-  // Ahora recibe List<ComponentCard>
+  // (Widget _buildComponentsGrid se mantiene igual)
   Widget _buildComponentsGrid(
-    List<ComponentCard> components, // <-- ¡Modelo actualizado!
+    List<ComponentCard> components,
     bool isDesktop,
-    Function(ComponentCard) onTapped, // <-- ¡Modelo actualizado!
+    Function(ComponentCard) onTapped,
   ) {
     return GridView.builder(
       shrinkWrap: true,
@@ -392,19 +482,15 @@ class _ComponentsPageState extends State<ComponentsPage>
             : (MediaQuery.of(context).size.width > 600 ? 2 : 1),
         crossAxisSpacing: 24,
         mainAxisSpacing: 24,
-        childAspectRatio: isDesktop
-            ? 1.1
-            : (MediaQuery.of(context).size.width > 600 ? 1.2 : 1.8),
+        childAspectRatio: 1.1, // Ajustado para incluir la imagen
       ),
       itemCount: components.length,
       itemBuilder: (context, index) {
         final component = components[index];
         return InkWell(
-          onTap: () => onTapped(component), // Llama al handler
+          onTap: () => onTapped(component),
           borderRadius: BorderRadius.circular(12.0),
-          child: ComponentCardWidget(
-            component: component,
-          ), // Usa el nuevo widget
+          child: ComponentCardWidget(component: component),
         );
       },
     );
@@ -412,7 +498,6 @@ class _ComponentsPageState extends State<ComponentsPage>
 
   // (Widget _buildEmptyState se mantiene igual)
   Widget _buildEmptyState(ThemeData theme) {
-    // ... (sin cambios)
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 64, horizontal: 32),
@@ -453,7 +538,7 @@ class _ComponentsPageState extends State<ComponentsPage>
     );
   }
 
-  // --- ¡NUEVO WIDGET DE ERROR! ---
+  // (Widget _buildErrorState se mantiene igual)
   Widget _buildErrorState(ThemeData theme, String error) {
     return Center(
       child: Padding(
@@ -478,7 +563,7 @@ class _ComponentsPageState extends State<ComponentsPage>
             ),
             const SizedBox(height: 8),
             Text(
-              error, // Muestra el error real de la API
+              error,
               style:
                   theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.secondary.withOpacity(0.7),
@@ -496,11 +581,9 @@ class _ComponentsPageState extends State<ComponentsPage>
   }
 }
 
-// --- TARJETA DE COMPONENTE (MODIFICADA) ---
-// (Renombrada a ComponentCardWidget para evitar conflicto con el modelo)
-// Ahora usa el modelo ComponentCard
+// (Widget ComponentCardWidget se mantiene igual)
 class ComponentCardWidget extends StatelessWidget {
-  final ComponentCard component; // <-- ¡Modelo actualizado!
+  final ComponentCard component;
 
   const ComponentCardWidget({super.key, required this.component});
 
@@ -512,7 +595,8 @@ class ComponentCardWidget extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Info Superior
+          // --- ¡INICIO DE CORRECCIÓN! ---
+          // Añadimos el widget de la imagen
           if (component.imageUrl != null)
             Image.network(
               component.imageUrl!,
@@ -553,12 +637,14 @@ class ComponentCardWidget extends StatelessWidget {
             ),
 
           const SizedBox(height: 16), // Espacio entre imagen y texto
-          // --- FIN DE CORRECCIÓN! --
+          // --- FIN DE CORRECCIÓN! ---
+
+          // Info Superior
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                component.category, // <-- Dato real
+                component.category,
                 style:
                     theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.secondary,
@@ -567,7 +653,7 @@ class ComponentCardWidget extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                component.name, // <-- Dato real
+                component.name,
                 style:
                     theme.textTheme.titleMedium?.copyWith(
                       color: Colors.white,
@@ -583,7 +669,7 @@ class ComponentCardWidget extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                component.brand ?? 'Sin marca', // <-- Dato real
+                component.brand ?? 'Sin marca',
                 style:
                     theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.secondary,
@@ -598,7 +684,6 @@ class ComponentCardWidget extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                // Maneja precio nulo
                 component.price != null
                     ? '\$${component.price!.toStringAsFixed(0)} MXN'
                     : 'No disponible',
@@ -619,7 +704,6 @@ class ComponentCardWidget extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                // Maneja tienda nula
                 'Disponible en: ${component.store ?? 'N/A'}',
                 style:
                     theme.textTheme.bodySmall?.copyWith(
@@ -647,7 +731,6 @@ class _GlassmorphismCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // ... (sin cambios)
     final theme = Theme.of(context);
     return ClipRRect(
       borderRadius: BorderRadius.circular(12.0),

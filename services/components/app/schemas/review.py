@@ -1,4 +1,4 @@
-from pydantic import BaseModel, constr, conint
+from pydantic import BaseModel, constr, conint, computed_field
 from datetime import datetime
 from typing import List
 from .comment import CommentCreate, CommentRead, UserInfo
@@ -19,8 +19,18 @@ class ReviewRead(BaseModel):
     title: str | None
     content: str
     created_at: datetime
-    user: UserInfo # Anidamos la info del autor
-    comments: List[CommentRead] = [] # Lista de comentarios
+   # user: UserInfo # Anidamos la info del autor
+   # comments: List[CommentRead] = [] # Lista de comentarios
+    comments: List[CommentRead] = []
+    
+    @computed_field
+    @property
+    def user(self, obj) -> UserInfo:
+        # 'obj' es el modelo 'Review' de SQLAlchemy
+        return UserInfo(
+            user_id=obj.user_id,
+            user_username=obj.user_username
+        )
 
     class Config:
         from_attributes = True

@@ -48,7 +48,7 @@ def get_component_by_id(db: Session, component_id: int) -> Optional[ComponentDet
 
     # 3. Mapeo al Schema 'ComponentDetail'
     component_data, avg_rating, review_count = component
-
+    
     # --- ¡INICIO DE CORRECCIÓN! ---
     # Pydantic v2 no acepta un 2do argumento.
     # Creamos el modelo usando el unpacking de Python.
@@ -58,7 +58,7 @@ def get_component_by_id(db: Session, component_id: int) -> Optional[ComponentDet
         review_count=review_count or 0 # Sobrescribe/Añade el conteo
     )
     # --- FIN DE CORRECCIÓN! ---
-
+    
     return component_detail
 
 
