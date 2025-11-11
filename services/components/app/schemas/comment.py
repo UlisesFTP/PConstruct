@@ -21,7 +21,18 @@ class CommentRead(BaseModel):
     id: int
     content: str
     created_at: datetime
-    user: UserInfo # Anidamos la info del usuario
+    # user: UserInfo # <-- Quitamos esto
+
+    # --- ¡INICIO DE CORRECCIÓN! ---
+    user_id: str
+    user_username: str | None
+
+    @property
+    def user(self) -> UserInfo:
+        return UserInfo(
+            user_id=self.user_id,
+            user_username=self.user_username
+        )
 
     class Config:
         orm_mode = True

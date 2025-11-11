@@ -88,7 +88,11 @@ class ComponentDetail {
       brand: json['brand'] as String?,
       imageUrl: json['image_url'] as String?,
       description: json['description'] as String?,
-      averageRating: (json['average_rating'] as num?)?.toDouble(),
+
+      averageRating: (json['average_rating'] != null)
+          ? double.tryParse(json['average_rating'].toString())
+          : null,
+
       reviewCount: json['review_count'] as int,
       offers: offersList,
       reviews: reviewsList,

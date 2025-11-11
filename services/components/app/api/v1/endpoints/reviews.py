@@ -15,13 +15,13 @@ router = APIRouter()
 
 
 
-# ... (Dependencia get_current_user_id se mantiene igual) ...
-async def get_current_user_id(
-    x_user_id: str = Header(..., description="ID del usuario (inyectado por API Gateway)")
-) -> str:
-    if not x_user_id:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuario no autenticado (Falta X-User-ID)")
-    return x_user_id
+async def get_current_user_info(
+    x_user_id: str = Header(..., description="ID del usuario (inyectado por API Gateway)"),
+    x_user_name: str = Header(..., description="Username (inyectado por API Gateway)")
+) -> dict:
+    if not x_user_id or not x_user_name:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuario no autenticado (Falta X-User-ID o X-User-Name)")
+    return {"user_id": x_user_id, "user_username": x_user_name}
 
 
 @router.post(
@@ -34,15 +34,15 @@ async def create_new_review(
     component_id: int,
     review_in: ReviewCreate,
     db: Session = Depends(get_db),
-    user_id: str = Depends(get_current_user_id) 
+    user_info: dict = Depends(get_current_user_info) 
 ):
     
     db_review = crud_review.create_review(
         db=db,
         component_id=component_id,
         review=review_in,
-        user_id=user_id,
-        user_username=None
+        user_id=user_info["user_id"],
+        user_username=user_info["user_username"]
     )
     
     if db_review is None:
@@ -68,7 +68,7 @@ async def create_new_comment(
     review_id: int,
     comment_in: CommentCreate,
     db: Session = Depends(get_db),
-    user_id: str = Depends(get_current_user_id)
+    user_info: dict = Depends(get_current_user_info)
 ):
     
     # (Validación opcional)
@@ -80,8 +80,9 @@ async def create_new_comment(
         db=db,
         review_id=review_id,
         comment=comment_in,
-        user_id=user_id,
-        user_username=None
+        user_id=user_info["user_id"], # <-- ¡CORREGIDO!
+        user_username=user_info["user_username"]
+  
     )
     
     if db_comment is None:

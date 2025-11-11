@@ -28,7 +28,7 @@ class _ComponentsPageState extends State<ComponentsPage>
   // Estados de los filtros
   String selectedCategoria = '';
   String selectedMarca = '';
-  double budgetMax = 25000;
+  RangeValues budgetRange = const RangeValues(0, 200000);
 
   late AnimationController _animationController;
   late Animation<double> _animation;
@@ -58,7 +58,8 @@ class _ComponentsPageState extends State<ComponentsPage>
         pageSize: _pageSize,
         category: selectedCategoria.isNotEmpty ? selectedCategoria : null,
         brand: selectedMarca.isNotEmpty ? selectedMarca : null,
-        maxPrice: (budgetMax < 25000) ? budgetMax : null,
+        minPrice: (budgetRange.start > 0) ? budgetRange.start : null,
+        maxPrice: (budgetRange.end < 200000) ? budgetRange.end : null,
         sortBy: "price_asc",
       );
     });
@@ -250,6 +251,8 @@ class _ComponentsPageState extends State<ComponentsPage>
             theme: theme,
             label: 'Categoría',
             value: selectedCategoria,
+            // --- ¡INICIO DE CORRECCIÓN! ---
+            // Nombres que coinciden con la DB del scraper
             items: [
               '',
               'CPU',
@@ -257,13 +260,15 @@ class _ComponentsPageState extends State<ComponentsPage>
               'Motherboard',
               'PSU',
               'RAM',
-              'storage',
-              'case',
-              'cooling',
-              'fan',
+              'SSD',
+              'HDD',
+              'Case',
+              'Cooling',
+              'Ventiladores',
               'Laptop',
               'Laptop_Gamer',
             ],
+            // Etiquetas amigables para el usuario
             itemLabels: [
               'Todas',
               'CPU',
@@ -271,13 +276,15 @@ class _ComponentsPageState extends State<ComponentsPage>
               'Motherboard',
               'PSU',
               'RAM',
-              'Almacenamiento',
+              'Almacenamiento (SSD)',
+              'Almacenamiento (HDD)',
               'Gabinete',
               'Enfriamiento',
               'Ventiladores',
               'Laptop',
               'Laptop Gamer',
             ],
+            // --- FIN DE CORRECCIÓN! ---
             onChanged: (value) {
               setState(() => selectedCategoria = value ?? '');
               _fetchData(page: 1); // Reinicia a la página 1 al filtrar
@@ -355,8 +362,9 @@ class _ComponentsPageState extends State<ComponentsPage>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // --- ¡INICIO DE CORRECCIÓN! ---
                 Text(
-                  'Presupuesto (MXN) ≤ \$${budgetMax.toInt()}',
+                  'Presupuesto (MXN): \$${budgetRange.start.toInt()} - \$${budgetRange.end.toInt()}',
                   style:
                       theme.textTheme.labelMedium?.copyWith(
                         color: theme.colorScheme.secondary,
@@ -374,21 +382,18 @@ class _ComponentsPageState extends State<ComponentsPage>
                     thumbColor: theme.primaryColor,
                     overlayColor: theme.primaryColor.withOpacity(0.2),
                     trackHeight: 2.0,
-                    thumbShape: const RoundSliderThumbShape(
-                      enabledThumbRadius: 8.0,
-                    ),
-                    overlayShape: const RoundSliderOverlayShape(
-                      overlayRadius: 16.0,
-                    ),
                   ),
-                  child: Slider(
-                    value: budgetMax,
-                    min: 100,
-                    max: 25000,
-                    divisions: 249,
-                    label: '\$${budgetMax.toInt()}',
-                    onChanged: (value) => setState(() => budgetMax = value),
-                    onChangeEnd: (value) =>
+                  child: RangeSlider(
+                    values: budgetRange,
+                    min: 0,
+                    max: 200000,
+                    divisions: 50, // 25000 / 50 = 500 pesos por división
+                    labels: RangeLabels(
+                      '\$${budgetRange.start.toInt()}',
+                      '\$${budgetRange.end.toInt()}',
+                    ),
+                    onChanged: (values) => setState(() => budgetRange = values),
+                    onChangeEnd: (values) =>
                         _fetchData(page: 1), // Reinicia a página 1
                   ),
                 ),

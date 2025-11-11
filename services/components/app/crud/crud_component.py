@@ -37,8 +37,12 @@ def get_component_by_id(db: Session, component_id: int) -> Optional[ComponentDet
         # Cargamos eficientemente las relaciones (hijos)
         .options(
             joinedload(Component.offers), # Cargar ofertas
-            joinedload(Component.reviews) # Cargar reseñas
-                .joinedload(Review.comments) # Cargar comentarios de reseñas
+
+            # --- ¡INICIO DE CORRECCIÓN! ---
+            # Cargar reseñas, y DENTRO de reseñas, cargar sus comentarios
+            joinedload(Component.reviews)
+                .joinedload(Review.comments) 
+            # --- FIN DE CORRECCIÓN! ---
         )
         .first()
     )
@@ -48,17 +52,16 @@ def get_component_by_id(db: Session, component_id: int) -> Optional[ComponentDet
 
     # 3. Mapeo al Schema 'ComponentDetail'
     component_data, avg_rating, review_count = component
-    
-    # --- ¡INICIO DE CORRECCIÓN! ---
-    # Pydantic v2 no acepta un 2do argumento.
-    # Creamos el modelo usando el unpacking de Python.
-    component_detail = ComponentDetail(
-        **component_data.__dict__,  # Pasa todos los atributos de la DB
-        average_rating=avg_rating,  # Sobrescribe/Añade el rating
-        review_count=review_count or 0 # Sobrescribe/Añade el conteo
-    )
+        # --- ¡INICIO DE CORRECCIÓN! ---
+    # 1. Validar el modelo principal DESDE EL ORM
+    # Pydantic convertirá component_data.reviews -> List[ReviewRead]
+    # y component_data.offers -> List[OfferRead] automáticamente.
+    component_detail = ComponentDetail.model_validate(component_data)
+
+    # 2. Añadir los campos calculados que no están en el modelo de la DB
+    component_detail.average_rating = avg_rating
+    component_detail.review_count = review_count or 0
     # --- FIN DE CORRECCIÓN! ---
-    
     return component_detail
 
 
@@ -68,6 +71,7 @@ def get_components_paginated(
     page_size: int = 20,
     category: Optional[str] = None,
     brand: Optional[str] = None,
+    min_price: Optional[float] = None,
     max_price: Optional[float] = None,
     search: Optional[str] = None,
     sort_by: Optional[str] = "price_asc"
@@ -116,13 +120,17 @@ def get_components_paginated(
     if brand:
         query = query.filter(Component.brand == brand)
     if search:
-        # Usamos la búsqueda de texto completo de PostgreSQL
         query = query.filter(Component.name.ilike(f"%{search}%"))
+
+    # --- ¡INICIO DE CORRECCIÓN! ---
+    if min_price is not None:
+        query = query.filter(BestOffer.price >= min_price)
+    # --- FIN DE CORRECCIÓN! ---
+
     if max_price:
-        # Filtramos por el precio de la mejor oferta
         query = query.filter(BestOffer.price <= max_price)
 
-    # 4. Conteo total (antes de paginar)
+# 4. Conteo total (DESPUÉS de filtros, ANTES de paginación)
     total_items = query.count()
 
     # 5. Aplicar Ordenamiento
@@ -135,11 +143,12 @@ def get_components_paginated(
     # 6. Aplicar Paginación
     offset = (page - 1) * page_size
     query = query.limit(page_size).offset(offset)
+    
+    # --- FIN DE CORRECCIÓN! ---
 
-    # 7. Ejecutar consulta y mapear a 'ComponentCard'
+    # 7. Ejecutar consulta y mapear (sin cambios)
     results = query.all()
     
-    # Mapeamos los resultados (que son tuplas) al schema ComponentCard
     items = [
         ComponentCard(
             id=row[0],
@@ -153,7 +162,7 @@ def get_components_paginated(
         ) for row in results
     ]
 
-    # 8. Devolver respuesta paginada
+    # 8. Devolver respuesta paginada (Ahora 'total_items' está definido)
     return PaginatedResponse(
         total_items=total_items,
         page=page,

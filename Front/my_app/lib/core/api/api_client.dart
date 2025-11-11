@@ -267,6 +267,7 @@ class ApiClient {
     String? category,
     String? brand,
     double? maxPrice,
+    double? minPrice,
     String? search,
     String? sortBy,
   }) async {
@@ -279,6 +280,7 @@ class ApiClient {
       if (category != null && category.isNotEmpty)
         queryParams['category'] = category;
       if (brand != null && brand.isNotEmpty) queryParams['brand'] = brand;
+      if (minPrice != null && minPrice > 0) queryParams['min_price'] = minPrice;
       if (maxPrice != null) queryParams['max_price'] = maxPrice;
       if (search != null && search.isNotEmpty) queryParams['search'] = search;
       if (sortBy != null && sortBy.isNotEmpty) queryParams['sort_by'] = sortBy;
@@ -330,6 +332,17 @@ class ApiClient {
         '/components/$componentId/reviews',
         data: {'rating': rating, 'title': title, 'content': content},
       );
+
+      // --- ¡INICIO DE CORRECCIÓN! ---
+      // Si el backend devuelve 201 (Creado) pero el cuerpo es nulo
+      // o no es un mapa, lanzamos un error controlado.
+      if (response.data == null || response.data is! Map<String, dynamic>) {
+        throw Exception(
+          'La reseña fue creada pero no se recibió respuesta (Respuesta: ${response.data})',
+        );
+      }
+      // --- FIN DE CORRECCIÓN! ---
+
       return ComponentReview.fromJson(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
       _handleDioError(e, 'Error al publicar la reseña.');

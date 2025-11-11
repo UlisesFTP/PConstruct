@@ -11,26 +11,31 @@ class ReviewCreate(BaseModel):
     title: constr(max_length=255) | None = None
     content: str
 
-# --- Schema de Lectura de Reseña ---
-# Lo que la API devuelve (incluye autor y sus comentarios)
+# --- Schema de Lectura de Reseña (MODIFICADO) ---
 class ReviewRead(BaseModel):
     id: int
     rating: int
     title: str | None
     content: str
     created_at: datetime
-   # user: UserInfo # Anidamos la info del autor
-   # comments: List[CommentRead] = [] # Lista de comentarios
-    comments: List[CommentRead] = []
+    comments: List[CommentRead] = [] 
+
+    # --- ¡INICIO DE CORRECCIÓN! ---
+    # En lugar de un @computed_field, simplemente
+    # declaramos el campo 'user' y Pydantic (con from_attributes=True)
+    # lo buscará en el modelo de la DB.
+    # Pero para que funcione, ¡primero debemos crear el objeto UserInfo!
+    user_id: str
+    user_username: str | None
     
-    @computed_field
+    # Creamos el objeto 'user' nosotros mismos
     @property
-    def user(self, obj) -> UserInfo:
-        # 'obj' es el modelo 'Review' de SQLAlchemy
+    def user(self) -> UserInfo:
         return UserInfo(
-            user_id=obj.user_id,
-            user_username=obj.user_username
+            user_id=self.user_id,
+            user_username=self.user_username
         )
+    # --- FIN DE CORRECCIÓN! ---
 
     class Config:
         from_attributes = True

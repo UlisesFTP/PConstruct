@@ -1,7 +1,5 @@
 // lib/models/component_review.dart
-// (Reemplaza el contenido de review.dart o crea un archivo nuevo)
-
-import 'package:my_app/models/user_info.dart';
+import 'user_info.dart';
 import 'package:my_app/models/comment_componente.dart';
 
 class ComponentReview {
@@ -24,12 +22,16 @@ class ComponentReview {
   });
 
   factory ComponentReview.fromJson(Map<String, dynamic> json) {
-    var commentsList = (json['comments'] as List<dynamic>)
-        .map(
-          (commentJson) =>
-              CommentComponente.fromJson(commentJson as Map<String, dynamic>),
-        )
-        .toList();
+    // Parsea la lista de comentarios de forma segura
+    var commentsList = <CommentComponente>[];
+    if (json['comments'] != null) {
+      commentsList = (json['comments'] as List<dynamic>)
+          .map(
+            (commentJson) =>
+                CommentComponente.fromJson(commentJson as Map<String, dynamic>),
+          )
+          .toList();
+    }
 
     return ComponentReview(
       id: json['id'] as int,
@@ -37,7 +39,8 @@ class ComponentReview {
       title: json['title'] as String?,
       content: json['content'] as String,
       createdAt: DateTime.parse(json['created_at'] as String),
-      user: UserInfo.fromJson(json['user'] as Map<String, dynamic>),
+      // Parsea el usuario de forma segura
+      user: UserInfo.fromJson(json['user'] as Map<String, dynamic>?),
       comments: commentsList,
     );
   }

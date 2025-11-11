@@ -23,6 +23,7 @@ async def get_component_list(
     page_size: int = Query(20, ge=1, le=100, description="Tamaño de página"),
     category: Optional[str] = Query(None, description="Filtrar por categoría (ej: CPU)"),
     brand: Optional[str] = Query(None, description="Filtrar por marca (ej: Intel)"),
+    min_price: Optional[float] = Query(None, ge=0, description="Precio mínimo"),
     max_price: Optional[float] = Query(None, ge=0, description="Precio máximo"),
     search: Optional[str] = Query(None, description="Término de búsqueda (ej: Core i5)"),
     sort_by: Optional[str] = Query("price_asc", description="Orden (price_asc o price_desc)")
@@ -34,7 +35,7 @@ async def get_component_list(
     """
     
     # --- Lógica de Caché (Lectura) ---
-    cache_key = f"components:page={page}:size={page_size}:cat={category}:brand={brand}:max_p={max_price}:search={search}:sort={sort_by}"
+    cache_key = f"components:page={page}:size={page_size}:cat={category}:brand={brand}:min_p={min_price}:max_p={max_price}:search={search}:sort={sort_by}"
     cached_data = await get_cache(cache_key)
     if cached_data:
         # Si está en caché, lo devolvemos (Pydantic lo re-validará)
@@ -47,6 +48,7 @@ async def get_component_list(
         page_size=page_size,
         category=category,
         brand=brand,
+        min_price=min_price,
         max_price=max_price,
         search=search,
         sort_by=sort_by

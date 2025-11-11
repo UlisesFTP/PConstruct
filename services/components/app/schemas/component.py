@@ -42,9 +42,12 @@ class ComponentDetail(ComponentBase):
     average_rating: Optional[float] = None
     review_count: int = 0
     
-    # Listas completas de los "hijos"
+    # --- ¡INICIO DE CORRECCIÓN! ---
+    # Exponemos las relaciones de la base de datos directamente
+    # Pydantic las convertirá a schemas gracias a from_attributes=True
     offers: List[OfferRead] = []
     reviews: List[ReviewRead] = []
+    # --- FIN DE CORRECCIÓN! ---
 
     class Config:
-        orm_mode = True
+        from_attributes = True

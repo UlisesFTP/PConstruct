@@ -40,6 +40,7 @@ async def login(credentials: Dict[str, str]):
                 "sub": str(user_profile["user_id"]),
                 "email": user_profile["email"],
                 "role": user_profile["role"],
+                "username": user_profile["username"],
                 "exp": expiration
             }
 

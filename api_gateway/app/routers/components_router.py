@@ -76,11 +76,16 @@ async def create_new_review(
     # 1. Validar Token (Patrón existente en tu gateway)
     token_data: Dict = verify_token(authorization)
     user_id = token_data.get("sub")
+    username = token_data.get("username")
     if not user_id:
         raise HTTPException(status_code=401, detail="Token inválido, falta 'sub' (user_id)")
     
     # 2. Preparar reenvío
-    headers = {"X-User-ID": str(user_id)}
+    headers = {
+        "X-User-ID": str(user_id),
+        "X-User-Name": str(username)
+        }
+    
     body = await request.json()
     
     async with httpx.AsyncClient() as client:
