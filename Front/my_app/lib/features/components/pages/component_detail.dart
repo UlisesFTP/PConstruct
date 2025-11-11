@@ -10,6 +10,7 @@ import 'package:my_app/models/component_review.dart';
 import 'package:my_app/models/comment_componente.dart';
 import 'package:my_app/models/offer.dart';
 import 'package:my_app/core/api/api_client.dart';
+import 'package:intl/intl.dart';
 
 class ComponentDetailPage extends StatefulWidget {
   // --- ¡CAMBIO EN EL CONSTRUCTOR! ---
@@ -756,7 +757,7 @@ class ReviewCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  review.user.userUsername ?? 'Usuario', // <-- Dato real
+                  review.user.userUsername ?? 'Anónimo', // <-- Dato real
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w500,
@@ -764,14 +765,18 @@ class ReviewCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
+                // --- ¡INICIO DE CORRECCIÓN DE FECHA! ---
                 Text(
-                  // (Calculamos el 'time ago' - podemos usar el paquete timeago)
-                  review.createdAt.toString(), // <-- Dato real
+                  // Formatea la fecha a "dd/MM y HH:mm"
+                  DateFormat(
+                    'dd/MM y HH:mm',
+                  ).format(review.createdAt.toLocal()),
                   style: const TextStyle(
                     color: Color(0xFFA0A0A0),
                     fontSize: 14,
                   ),
                 ),
+                // --- FIN DE CORRECCIÓN! ---
               ],
             ),
           ],

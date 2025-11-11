@@ -19,16 +19,14 @@ class ReviewRead(BaseModel):
     content: str
     created_at: datetime
     comments: List[CommentRead] = [] 
-
-    # --- ¡INICIO DE CORRECCIÓN! ---
-    # En lugar de un @computed_field, simplemente
-    # declaramos el campo 'user' y Pydantic (con from_attributes=True)
-    # lo buscará en el modelo de la DB.
-    # Pero para que funcione, ¡primero debemos crear el objeto UserInfo!
+    
+   # --- ¡INICIO DE CORRECCIÓN! ---
+    # 1. Traemos los campos de la DB
     user_id: str
     user_username: str | None
-    
-    # Creamos el objeto 'user' nosotros mismos
+
+    # 2. Usamos @computed_field para crear el objeto 'user'
+    @computed_field
     @property
     def user(self) -> UserInfo:
         return UserInfo(
@@ -36,6 +34,8 @@ class ReviewRead(BaseModel):
             user_username=self.user_username
         )
     # --- FIN DE CORRECCIÓN! ---
+
+    
 
     class Config:
         from_attributes = True

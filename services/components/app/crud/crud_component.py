@@ -52,16 +52,17 @@ def get_component_by_id(db: Session, component_id: int) -> Optional[ComponentDet
 
     # 3. Mapeo al Schema 'ComponentDetail'
     component_data, avg_rating, review_count = component
-        # --- ¡INICIO DE CORRECCIÓN! ---
+    
+    # --- ¡INICIO DE CORRECCIÓN! ---
     # 1. Validar el modelo principal DESDE EL ORM
-    # Pydantic convertirá component_data.reviews -> List[ReviewRead]
-    # y component_data.offers -> List[OfferRead] automáticamente.
+    # Pydantic llamará a los @computed_field de ReviewRead
     component_detail = ComponentDetail.model_validate(component_data)
 
-    # 2. Añadir los campos calculados que no están en el modelo de la DB
-    component_detail.average_rating = avg_rating
+    # 2. Añadir los campos calculados (y castear a float)
+    component_detail.average_rating = float(avg_rating) if avg_rating else None # <-- ¡CAST A FLOAT!
     component_detail.review_count = review_count or 0
     # --- FIN DE CORRECCIÓN! ---
+  
     return component_detail
 
 

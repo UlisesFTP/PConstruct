@@ -600,48 +600,60 @@ class ComponentCardWidget extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // --- ¡INICIO DE CORRECCIÓN! ---
-          // Añadimos el widget de la imagen
+          // --- ¡INICIO DE CORRECCIÓN ESTÉTICA! ---
           if (component.imageUrl != null)
-            Image.network(
-              component.imageUrl!,
-              height: 120, // Altura fija para la imagen
-              width: double.infinity,
-              fit: BoxFit.cover,
-              // Placeholder mientras carga
-              loadingBuilder: (context, child, progress) {
-                return progress == null
-                    ? child
-                    : Container(
-                        height: 120,
-                        color: Colors.grey[850],
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            value: progress.expectedTotalBytes != null
-                                ? progress.cumulativeBytesLoaded /
-                                      progress.expectedTotalBytes!
-                                : null,
-                          ),
-                        ),
-                      );
-              },
-              // Error si no puede cargar
-              errorBuilder: (context, error, stackTrace) => Container(
-                height: 120,
-                color: Colors.grey[850],
-                child: Icon(Icons.broken_image, color: Colors.grey[700]),
+            // 1. Añadimos ClipRRect para redondear las esquinas
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8.0),
+              child: Container(
+                // 2. Fondo sutil para que 'contain' se vea bien
+                color: Colors.black.withOpacity(0.2),
+                height: 120, // Altura fija
+                width: double.infinity,
+                child: Image.network(
+                  component.imageUrl!,
+                  height: 120,
+                  width: double.infinity,
+                  // 3. ¡CAMBIO PRINCIPAL!
+                  fit: BoxFit.contain, // En lugar de BoxFit.cover
+                  // Placeholder mientras carga
+                  loadingBuilder: (context, child, progress) {
+                    return progress == null
+                        ? child
+                        : Center(
+                            child: CircularProgressIndicator(
+                              value: progress.expectedTotalBytes != null
+                                  ? progress.cumulativeBytesLoaded /
+                                        progress.expectedTotalBytes!
+                                  : null,
+                            ),
+                          );
+                  },
+                  // Error si no puede cargar
+                  errorBuilder: (context, error, stackTrace) => Icon(
+                    Icons.broken_image,
+                    color: Colors.grey[700],
+                    size: 48,
+                  ),
+                ),
               ),
             )
           else
             Container(
-              // Placeholder si no hay imagen
               height: 120,
               width: double.infinity,
-              color: Colors.grey[850],
-              child: Icon(Icons.no_photography, color: Colors.grey[700]),
+              decoration: BoxDecoration(
+                color: Colors.grey[850],
+                borderRadius: BorderRadius.circular(8.0), // Redondear también
+              ),
+              child: Icon(
+                Icons.no_photography,
+                color: Colors.grey[700],
+                size: 48,
+              ),
             ),
 
-          const SizedBox(height: 16), // Espacio entre imagen y texto
+          const SizedBox(height: 16),
           // --- FIN DE CORRECCIÓN! ---
 
           // Info Superior

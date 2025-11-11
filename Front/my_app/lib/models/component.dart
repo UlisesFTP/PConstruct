@@ -89,10 +89,15 @@ class ComponentDetail {
       imageUrl: json['image_url'] as String?,
       description: json['description'] as String?,
 
+      // --- ¡INICIO DE CORRECCIÓN! ---
+      // Parsea 'average_rating' de forma robusta.
       averageRating: (json['average_rating'] != null)
-          ? double.tryParse(json['average_rating'].toString())
+          ? double.tryParse(
+              json['average_rating'].toString(),
+            ) // <-- Acepta String o Num
           : null,
 
+      // --- FIN DE CORRECCIÓN! ---
       reviewCount: json['review_count'] as int,
       offers: offersList,
       reviews: reviewsList,

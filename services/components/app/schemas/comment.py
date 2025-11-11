@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 from datetime import datetime
 
 # --- Schema Base (para el 'hijo') ---
@@ -22,17 +22,22 @@ class CommentRead(BaseModel):
     content: str
     created_at: datetime
     # user: UserInfo # <-- Quitamos esto
-
-    # --- ¡INICIO DE CORRECCIÓN! ---
+    
+# --- ¡INICIO DE CORRECCIÓN! ---
+    # 1. Traemos los campos de la DB
     user_id: str
     user_username: str | None
 
+    # 2. Usamos @computed_field para crear el objeto 'user'
+    @computed_field
     @property
     def user(self) -> UserInfo:
         return UserInfo(
             user_id=self.user_id,
             user_username=self.user_username
         )
+    # --- FIN DE CORRECCIÓN! ---
+ 
 
     class Config:
         orm_mode = True
