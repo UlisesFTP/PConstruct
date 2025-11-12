@@ -262,7 +262,7 @@ class _ComponentsPageState extends State<ComponentsPage>
               'RAM',
               'SSD',
               'HDD',
-              'Case',
+              'Gabinete',
               'Cooling',
               'Ventiladores',
               'Laptop',

@@ -443,6 +443,24 @@ class ApiClient {
     }
   }
 
+  Future<Map<String, dynamic>> runBenchmark(
+    Map<String, dynamic> benchmarkData,
+  ) async {
+    try {
+      // Nota: Esta ruta no usa el prefijo /api/v1 según tu benchmark_router.py
+      final response = await _dio.post(
+        '/benchmark/estimate',
+        data: benchmarkData,
+        // Aumentamos el timeout solo para esta llamada, Gemini puede tardar
+        options: Options(receiveTimeout: const Duration(seconds: 45)),
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      _handleDioError(e, 'Error al ejecutar el benchmark.');
+      rethrow;
+    }
+  }
+
   // --- MANEJO DE ERRORES CENTRALIZADO (Sin cambios) ---
   void _handleDioError(DioException e, String defaultMessage) {
     if (e.response != null) {

@@ -83,10 +83,10 @@ class PCComponentFilter:
                           'deepcool', 'thermaltake', 'nzxt', 'aio', 'ekwb', 'id-cooling'],
                 'types': ['cooler', 'ventilador', 'fan', 'refrigeracion', 'disipador', 'aio', 'liquid']
             },
-            'case': {
+            'gabinete': {
                 'brands': ['nzxt', 'corsair', 'cooler master', 'thermaltake', 'lian li',
                           'phanteks', 'fractal design', 'be quiet', 'deepcool', 'montech'],
-                'types': ['gabinete', 'case', 'torre', 'chassis']
+                'types': ['gabinete', 'gabinete', 'torre', 'chassis']
             },
             'fan': {
                 'brands': ['noctua', 'arctic', 'corsair', 'be quiet', 'cooler master',
@@ -154,7 +154,7 @@ class PCComponentFilter:
                    'cable', 'riser', 'bracket', 'soporte', 'backplate', 'adaptador', 'puente'],
             'storage': ['adaptador', 'bracket', 'caddy', 'carcasa externa', 'cable sata'],
             'cooling': ['ventilador repuesto', 'replacement fan', 'fan only'],
-            'case': ['ventilador', 'fan', 'rgb strip', 'led strip'],
+            'gabinete': ['ventilador', 'fan', 'rgb strip', 'led strip'],
             'laptop': ['cargador', 'charger', 'batería', 'battery', 'teclado', 'mouse']
         }
         
@@ -218,7 +218,7 @@ class PCComponentFilter:
                 return False, "❌ Sin marca de PSU"
             return True, "✅ PSU válida"
         
-        elif component_type in ['cooling', 'case', 'fan', 'motherboard']:
+        elif component_type in ['cooling', 'gabinete', 'fan', 'motherboard']:
             has_brand = any(brand in text_lower for brand in requirements.get('brands', []))
             has_type = any(ctype in text_lower for ctype in requirements.get('types', []))
             
@@ -312,9 +312,9 @@ class MultiStoreScraper:
                 'keywords': ['cooler cpu', 'refrigeracion liquida'],
                 'filter_type': 'cooling'
             },
-            'Case': {
-                'keywords': ['gabinete pc', 'case gamer'],
-                'filter_type': 'case'
+            'Gabinete': {
+                'keywords': ['gabinete pc', 'gabinete gamer'],
+                'filter_type': 'gabinete'
             },
             'Ventiladores': {
                 'keywords': ['ventilador pc 120mm', 'rgb fan'],
@@ -409,7 +409,7 @@ class MultiStoreScraper:
 
             return "N/A" # Si no encuentra nada
     # (scrape_amazon - Copiado 1:1)
-    def scrape_amazon(self, search_term, category_name, max_pages=5):
+    def scrape_amazon(self, search_term, category_name, max_pages=7):
         """Scraper para Amazon México"""
         print(f"\n🔍 {category_name}: '{search_term}'")
         products = []
@@ -504,7 +504,7 @@ class MultiStoreScraper:
         return products
 
     # (scrape_all_categories - MODIFICADO: sin input)
-    def scrape_all_categories(self, max_pages=5):
+    def scrape_all_categories(self, max_pages=7):
         """Scraper TODAS las categorías"""
         print("\n" + "="*70)
         print("🛒 AMAZON PC COMPONENTS SCRAPER - MODO COMPLETO")
@@ -654,7 +654,7 @@ class MultiStoreScraper:
 
 
     # --- MODIFICADO: 'run' ahora es no-interactivo ---
-    def run(self, max_pages_per_search: int = 5):
+    def run(self, max_pages_per_search: int = 7):
         """
         Ejecutar scraper completo y guardar en DB.
         """
@@ -715,7 +715,7 @@ async def main():
         
         # 4. Ejecutar (ej. 2 páginas por búsqueda)
         # (Este método NO es async, se ejecuta de forma síncrona)
-        scraper.run(max_pages_per_search=5)
+        scraper.run(max_pages_per_search=7)
         
         # 5. Invalidar la caché de Redis
         print("\n" + "="*70)

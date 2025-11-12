@@ -10,7 +10,7 @@ async def get_all_software_requirements(db: AsyncSession):
     res = await db.execute(select(SoftwareRequirement))
     return list(res.scalars())
 
-async def resolve_component_ids_from_build(build_id: int) -> list[int]:
+async def resolve_component_ids_from_build(build_id: str) -> list[int]:
     async with httpx.AsyncClient(timeout=5.0) as client:
         r = await client.get(f"{BUILD_SERVICE_URL}/builds/{build_id}")
         if r.status_code != 200:

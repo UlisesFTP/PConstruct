@@ -15,14 +15,18 @@ class CompareRequest(BaseModel):
 
 class EstimateRequest(BaseModel):
     component_ids: Optional[List[int]] = None
-    build_id: Optional[int] = None
+    build_id: Optional[str] = None
     cpu_model: Optional[str] = None
     gpu_model: Optional[str] = None
     scenario: Optional[str] = None
     hints: Optional[Dict[str, Any]] = None   # usado por main.py
 
 class EstimateResponse(BaseModel):
-    method: Literal["interpolation","tier","fallback"] = "interpolation"
+    # --- MODIFICACIÓN ---
+    # Añadimos "gemini" a la lista de métodos permitidos
+    method: Literal["interpolation","tier","fallback", "gemini"] = "interpolation"
+    # --- FIN DE MODIFICACIÓN ---
+    
     components: List[ComponentResult]
     scores_used: Dict[str, str]      # MUST be strings like "csv", not ints
     scenario: Optional[str] = None
