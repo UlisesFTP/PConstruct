@@ -1,25 +1,14 @@
 import 'package:flutter/material.dart';
-import 'dart:ui'; // For potential BackdropFilter if needed later
-
-// Renamed local Component model to avoid conflict with lib/models/component.dart
-class BuildComponentChoice {
-  final String name;
-  final int price;
-  final String brand;
-  final String img;
-  final Map<String, String> links;
-
-  BuildComponentChoice({
-    required this.name,
-    required this.price,
-    required this.brand,
-    required this.img,
-    required this.links,
-  });
-}
+import 'dart:ui'; // Para BackdropFilter
+import 'package:provider/provider.dart';
+import 'package:my_app/core/api/api_client.dart';
+import 'package:my_app/models/component.dart';
+import 'package:my_app/models/build.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:intl/intl.dart';
+import 'dart:async'; // Para el Debouncer
 
 class BuildConstructorPage extends StatefulWidget {
-  // Removed const from constructor as controllers make it non-constant
   BuildConstructorPage({super.key});
 
   @override
@@ -27,221 +16,397 @@ class BuildConstructorPage extends StatefulWidget {
 }
 
 class _BuildConstructorPageState extends State<BuildConstructorPage> {
-  // --- MOCK DATA ---
-  // Using the renamed model BuildComponentChoice
-  final Map<String, List<BuildComponentChoice>> buildComponents = {
-    'cpu': [
-      BuildComponentChoice(
-        name: 'Intel Core i9-14900K',
-        price: 13500,
-        brand: 'Intel',
-        img: 'https://via.placeholder.com/100',
-        links: {'amazon': '#', 'ml': '#', 'cyber': '#'},
-      ),
-      BuildComponentChoice(
-        name: 'AMD Ryzen 9 7950X',
-        price: 11000,
-        brand: 'AMD',
-        img: 'https://via.placeholder.com/100',
-        links: {'amazon': '#', 'ml': '#', 'cyber': '#'},
-      ),
-    ],
-    'gpu': [
-      BuildComponentChoice(
-        name: 'RTX 4090',
-        price: 35000,
-        brand: 'NVIDIA',
-        img: 'https://via.placeholder.com/100',
-        links: {'amazon': '#', 'ml': '#', 'cyber': '#'},
-      ),
-      BuildComponentChoice(
-        name: 'RX 7900 XTX',
-        price: 21000,
-        brand: 'AMD',
-        img: 'https://via.placeholder.com/100',
-        links: {'amazon': '#', 'ml': '#', 'cyber': '#'},
-      ),
-    ],
-    'motherboard': [
-      BuildComponentChoice(
-        name: 'MSI B760',
-        price: 4500,
-        brand: 'MSI',
-        img: 'https://via.placeholder.com/100',
-        links: {'amazon': '#', 'ml': '#', 'cyber': '#'},
-      ),
-      BuildComponentChoice(
-        name: 'ASUS ROG STRIX B760',
-        price: 5000,
-        brand: 'ASUS',
-        img: 'https://via.placeholder.com/100',
-        links: {'amazon': '#', 'ml': '#', 'cyber': '#'},
-      ),
-    ],
-    'ram': [
-      BuildComponentChoice(
-        name: 'Corsair Vengeance 32GB',
-        price: 3000,
-        brand: 'Corsair',
-        img: 'https://via.placeholder.com/100',
-        links: {'amazon': '#', 'ml': '#', 'cyber': '#'},
-      ),
-      BuildComponentChoice(
-        name: 'G.Skill Trident Z 32GB',
-        price: 3200,
-        brand: 'G.Skill',
-        img: 'https://via.placeholder.com/100',
-        links: {'amazon': '#', 'ml': '#', 'cyber': '#'},
-      ),
-    ],
-    'storage_primary': [
-      BuildComponentChoice(
-        name: 'Samsung 980 Pro 1TB',
-        price: 2500,
-        brand: 'Samsung',
-        img: 'https://via.placeholder.com/100',
-        links: {'amazon': '#', 'ml': '#', 'cyber': '#'},
-      ),
-    ],
-    'cooler': [
-      BuildComponentChoice(
-        name: 'Cooler Master Hyper 212',
-        price: 800,
-        brand: 'Cooler Master',
-        img: 'https://via.placeholder.com/100',
-        links: {'amazon': '#', 'ml': '#', 'cyber': '#'},
-      ),
-    ],
-    // Add other categories like case, psu, etc. if needed
-  };
+  // --- API y Estado de Carga ---
+  late ApiClient _apiClient;
+  bool _isSaving = false;
+  bool _isCheckingCompatibility = false;
+  Timer? _debounce;
+
+  final Map<String, Future<PaginatedComponentsResponse>> _componentFutures = {};
 
   final Map<String, IconData> icons = {
     'cpu': Icons.memory,
-    'gpu': Icons.developer_board_outlined, // Changed icon
+    'gpu': Icons.developer_board_outlined,
     'motherboard': Icons.developer_board,
-    'ram': Icons.memory_outlined, // Changed icon
-    'storage_primary': Icons.save, // Changed icon
-    'storage_secondary': Icons.save_alt, // Changed icon
+    'ram': Icons.memory_outlined,
+    'storage_primary': Icons.save,
+    'storage_secondary': Icons.save_alt,
     'cooler': Icons.ac_unit,
-    'case': Icons.desktop_windows_outlined, // Changed icon
+    'case': Icons.desktop_windows_outlined,
     'psu': Icons.power,
-    'fans': Icons.wind_power, // Changed icon
-    // Peripherals might not belong in the core build constructor?
-    'headphones': Icons.headphones,
-    'network_cards': Icons.router,
-    'monitors': Icons.monitor,
-    'keyboard': Icons.keyboard,
-    'mouse': Icons.mouse,
+    'fans': Icons.wind_power,
     'os': Icons.computer,
-    'ups': Icons.battery_charging_full,
   };
-  // --- END MOCK DATA ---
 
-  // Component Types to display in order
-  // Added some common missing ones
-  final List<String> componentOrder = [
-    'cpu',
-    'motherboard',
-    'ram',
-    'gpu',
-    'storage_primary',
-    'storage_secondary',
-    'cooler',
-    'case',
-    'psu',
-    'fans',
-    'os',
-  ];
+  // --- ¡INICIO DE LA CORRECCIÓN! ---
 
-  // State variables
-  final Map<String, BuildComponentChoice> selectedComponents = {};
+  // 1. Mapa de "claves" a "categorías de API" (como en components_page.dart)
+  final Map<String, String> apiCategoryMap = {
+    'cpu': 'CPU',
+    'motherboard': 'Motherboard',
+    'ram': 'RAM',
+    'gpu': 'GPU',
+    'storage_primary': 'SSD', // Asumimos que primario es SSD
+    'storage_secondary': 'HDD', // Asumimos que secundario es HDD
+    'cooler': 'Cooling',
+    'case': 'Case',
+    'psu': 'PSU',
+    'fans': 'Ventiladores',
+    // 'os': 'OS', // Tu API de componentes probablemente no tenga "OS"
+  };
+
+  // 2. Mapa de "claves" a "nombres para mostrar"
+  final Map<String, String> displayNames = {
+    'cpu': 'Cpu',
+    'motherboard': 'Motherboard',
+    'ram': 'Ram',
+    'gpu': 'Gpu',
+    'storage_primary': 'Storage Primary (SSD)',
+    'storage_secondary': 'Storage Secondary (HDD)',
+    'cooler': 'Cooler',
+    'case': 'Case',
+    'psu': 'Psu',
+    'fans': 'Fans',
+    // 'os': 'Os',
+  };
+
+  // 3. ❌ Eliminamos la lista antigua
+  // final List<String> componentOrder = [ ... ];
+
+  // --- FIN DE LA CORRECCIÓN ---
+
+  final Map<String, ComponentCard> selectedComponents = {};
   final Map<String, bool> expandedSections = {};
   final Map<String, TextEditingController> searchControllers = {};
   final Map<String, TextEditingController> minPriceControllers = {};
   final Map<String, TextEditingController> maxPriceControllers = {};
   final Map<String, String> selectedBrands = {};
 
+  final currencyFormatter = NumberFormat.currency(
+    locale: 'es_MX',
+    symbol: '\$',
+    decimalDigits: 0,
+  );
+
   @override
   void initState() {
     super.initState();
-    // Initialize state for component types defined in componentOrder
-    for (var type in componentOrder) {
-      // Use componentOrder
-      expandedSections[type] = false;
-      searchControllers[type] = TextEditingController();
-      minPriceControllers[type] = TextEditingController();
-      maxPriceControllers[type] = TextEditingController();
-      selectedBrands[type] = '';
-      // Initialize mock data if missing for types in componentOrder
-      if (!buildComponents.containsKey(type)) {
-        buildComponents[type] =
-            []; // Add empty list for types without mock data yet
-      }
+    _apiClient = Provider.of<ApiClient>(context, listen: false);
+
+    // 4. Usamos las claves del nuevo mapa
+    for (var typeKey in apiCategoryMap.keys) {
+      expandedSections[typeKey] = false;
+      searchControllers[typeKey] = TextEditingController();
+      minPriceControllers[typeKey] = TextEditingController();
+      maxPriceControllers[typeKey] = TextEditingController();
+      selectedBrands[typeKey] = '';
     }
   }
 
   @override
   void dispose() {
-    // Dispose all controllers
+    _debounce?.cancel();
     searchControllers.values.forEach((controller) => controller.dispose());
     minPriceControllers.values.forEach((controller) => controller.dispose());
     maxPriceControllers.values.forEach((controller) => controller.dispose());
     super.dispose();
   }
 
-  // Calculate total price
-  int get totalPrice {
-    return selectedComponents.values.fold(0, (sum, comp) => sum + comp.price);
+  // --- ¡LÓGICA DE CARGA DE DATOS ACTUALIZADA! ---
+  void _refreshComponentList(String typeKey) {
+    // 'type' ahora es 'typeKey'
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      // 5. Obtenemos la categoría de API real
+      final String apiCategory = apiCategoryMap[typeKey]!;
+
+      final search = searchControllers[typeKey]?.text.toLowerCase();
+      final minPrice = double.tryParse(
+        minPriceControllers[typeKey]?.text ?? '',
+      );
+      final maxPriceText = maxPriceControllers[typeKey]?.text ?? '';
+      final maxPrice = maxPriceText.isEmpty
+          ? null
+          : double.tryParse(maxPriceText);
+      final brand = selectedBrands[typeKey];
+
+      setState(() {
+        _componentFutures[typeKey] = _apiClient.fetchComponents(
+          // 6. Enviamos la categoría correcta (ej: "CPU")
+          category: apiCategory,
+          pageSize: 50,
+          search: (search != null && search.isNotEmpty) ? search : null,
+          minPrice: (minPrice != null && minPrice > 0) ? minPrice : null,
+          maxPrice: maxPrice,
+          brand: (brand != null && brand.isNotEmpty) ? brand : null,
+        );
+      });
+    });
   }
 
-  // Filter components for a section based on search, price, brand
-  List<BuildComponentChoice> getFilteredComponents(String type) {
-    final components = buildComponents[type] ?? [];
-    final search = searchControllers[type]?.text.toLowerCase() ?? '';
-    final minPrice = int.tryParse(minPriceControllers[type]?.text ?? '') ?? 0;
-    final maxPriceText = maxPriceControllers[type]?.text ?? '';
-    final maxPrice = maxPriceText.isEmpty
-        ? 9999999 // Use a very large number instead of infinity
-        : int.tryParse(maxPriceText) ?? 9999999;
-    final brand = selectedBrands[type] ?? '';
+  // ... (El resto de funciones _handleCreateBuild, _showNameAndTypeDialog, _runCompatibilityCheck no cambian) ...
+  // --- Lógica de Guardado (Sin cambios) ---
+  Future<void> _handleCreateBuild(bool isPublic) async {
+    // ... (Tu código _handleCreateBuild se mantiene igual) ...
+    final buildDetails = await _showNameAndTypeDialog();
+    if (buildDetails == null) return;
 
-    return components.where((comp) {
-      final matchesSearch = comp.name.toLowerCase().contains(search);
-      final matchesPrice = comp.price >= minPrice && comp.price <= maxPrice;
-      final matchesBrand = brand.isEmpty || comp.brand == brand;
-      return matchesSearch && matchesPrice && matchesBrand;
-    }).toList();
+    setState(() => _isSaving = true);
+
+    try {
+      final List<BuildComponentCreate> componentsToCreate = selectedComponents
+          .entries
+          .map((entry) {
+            final category = entry.key;
+            final comp = entry.value;
+            return BuildComponentCreate(
+              componentId: comp.id,
+              category: category,
+              name: comp.name,
+              imageUrl: comp.imageUrl,
+              priceAtBuildTime: comp.price ?? 0.0,
+            );
+          })
+          .toList();
+
+      final buildData = BuildCreate(
+        name: buildDetails['name']!,
+        useType: buildDetails['useType']!,
+        isPublic: isPublic,
+        components: componentsToCreate,
+        description: "",
+        imageUrl: "",
+      );
+
+      await _apiClient.createBuild(buildData);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Build "${buildData.name}" ${isPublic ? "publicada" : "guardada"} con éxito.',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+      Navigator.pushReplacementNamed(context, '/my-builds');
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al guardar la build: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
-  // Get unique brands for a component type
-  Set<String> getBrands(String type) {
-    return (buildComponents[type] ?? []).map((c) => c.brand).toSet();
+  // --- Diálogo de Nombre y Tipo (Sin cambios) ---
+  Future<Map<String, String>?> _showNameAndTypeDialog() async {
+    // ... (Tu código de _showNameAndTypeDialog se mantiene igual) ...
+    final _formKey = GlobalKey<FormState>();
+    final _nameController = TextEditingController();
+    String _selectedUseType = 'Gaming'; // Valor por defecto
+
+    final List<String> useTypes = [
+      'Gaming',
+      'Oficina',
+      'Edición',
+      'Programación',
+      'Otro',
+    ];
+
+    return showDialog<Map<String, String>?>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1A1A1C),
+              title: Text(
+                'Detalles de la Build',
+                style: TextStyle(color: Colors.white),
+              ),
+              content: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: _nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre de la Build',
+                      ),
+                      validator: (value) =>
+                          value!.isEmpty ? 'El nombre es requerido' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: _selectedUseType,
+                      decoration: const InputDecoration(
+                        labelText: 'Tipo de Uso',
+                      ),
+                      dropdownColor: const Color(0xFF1C1C1C),
+                      items: useTypes
+                          .map(
+                            (type) => DropdownMenuItem(
+                              value: type,
+                              child: Text(type),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setDialogState(() => _selectedUseType = value);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  child: Text(
+                    'Cancelar',
+                    style: TextStyle(color: Colors.grey[400]),
+                  ),
+                  onPressed: () => Navigator.of(context).pop(null),
+                ),
+                ElevatedButton(
+                  child: const Text('Confirmar'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Theme.of(context).primaryColor,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () {
+                    if (_formKey.currentState!.validate()) {
+                      Navigator.of(context).pop({
+                        'name': _nameController.text,
+                        'useType': _selectedUseType,
+                      });
+                    }
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
-  // --- BUILD METHOD ---
+  // --- Función de Validación de Gemini (Sin cambios) ---
+  Future<void> _runCompatibilityCheck() async {
+    // ... (Tu código de _runCompatibilityCheck se mantiene igual) ...
+    if (_isCheckingCompatibility) return;
+
+    final cpu = selectedComponents['cpu']?.name;
+    final motherboard = selectedComponents['motherboard']?.name;
+
+    if (cpu == null || motherboard == null) {
+      print("Saltando verificación: Faltan CPU o Motherboard.");
+      return;
+    }
+
+    print("Ejecutando verificación de compatibilidad...");
+    if (mounted) setState(() => _isCheckingCompatibility = true);
+
+    try {
+      final componentsToVerify = {
+        'cpu': cpu,
+        'motherboard': motherboard,
+        'ram': selectedComponents['ram']?.name,
+        'gpu': selectedComponents['gpu']?.name,
+      };
+
+      final response = await _apiClient.checkCompatibility(componentsToVerify);
+
+      if (!mounted) return;
+
+      if (!response.compatible) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Advertencia: ${response.reason}',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.red.shade600,
+            duration: const Duration(seconds: 8),
+            showCloseIcon: true,
+            closeIconColor: Colors.white,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_outline, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    response.reason,
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.green.shade600,
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al contactar el servicio de validación: $e'),
+            backgroundColor: Colors.grey[800],
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isCheckingCompatibility = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isDesktop =
-        MediaQuery.of(context).size.width >
-        900; // Adjusted breakpoint for sidebar
+    final isDesktop = MediaQuery.of(context).size.width > 900;
     final theme = Theme.of(context);
 
-    // No Scaffold, return the content directly
     return Row(
-      // Use Row for main layout + sidebar on desktop
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Main Constructor Area
         Expanded(
-          // flex: isDesktop ? 2 : 1, // Adjust flex ratio if needed
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Title
                 Text(
-                  'Crear Nueva Build', // Updated Title
+                  'Crear Nueva Build',
                   style:
                       theme.textTheme.headlineMedium?.copyWith(
                         color: Colors.white,
@@ -255,7 +420,7 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Selecciona los componentes para tu nueva configuración.', // Subtitle
+                  'Selecciona los componentes para tu nueva configuración.',
                   style:
                       theme.textTheme.titleMedium?.copyWith(
                         color: Colors.grey[400],
@@ -263,65 +428,54 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                       TextStyle(color: Colors.grey[400], fontSize: 16),
                 ),
                 const SizedBox(height: 32),
-                // Component Sections List
                 Column(
-                  // Generate sections directly within the Column
-                  children: componentOrder.map((type) {
-                    return _buildComponentSection(type);
+                  // 7. ¡Iteramos sobre las claves del nuevo mapa!
+                  children: apiCategoryMap.keys.map((typeKey) {
+                    return _buildComponentSection(typeKey);
                   }).toList(),
                 ),
-                // ... componentOrder.map((type) => _buildComponentSection(type)), // Map through ordered list
               ],
             ),
           ),
         ),
-
-        // Sidebar Summary (Only on Desktop)
-        if (isDesktop)
-          SizedBox(
-            width: 350, // Fixed width for sidebar
-            // Tries to size child to intrinsic height
-            child: _buildSidebar(),
-          ),
-        // If not desktop, consider showing summary in a different way (e.g., bottom sheet, separate page)
+        if (isDesktop) SizedBox(width: 350, child: _buildSidebar()),
       ],
     );
   }
 
-  // --- HELPER WIDGETS (INSIDE STATE CLASS) ---
+  // --- ¡SECCIÓN DE COMPONENTES ACTUALIZADA! ---
+  Widget _buildComponentSection(String typeKey) {
+    // 'type' ahora es 'typeKey'
+    final isExpanded = expandedSections[typeKey] ?? false;
 
-  // Builds a collapsible section for a component type
-  Widget _buildComponentSection(String type) {
-    final isExpanded = expandedSections[type] ?? false;
-    final displayName = type
-        .replaceAll('_', ' ')
-        .split(' ')
-        .map((word) => word[0].toUpperCase() + word.substring(1))
-        .join(' '); // Capitalize words
-    final selectedComp = selectedComponents[type];
-    final filteredList = getFilteredComponents(type);
+    // 8. Usamos el mapa de nombres para mostrar
+    final displayName = displayNames[typeKey] ?? typeKey.toUpperCase();
+
+    final selectedComp = selectedComponents[typeKey];
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        // Use theme surface color with opacity for glassmorphism base
         color: Theme.of(context).colorScheme.surface.withOpacity(0.7),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFF2A2A2A)),
       ),
       child: ClipRRect(
-        // Clip for BackdropFilter effect
         borderRadius: BorderRadius.circular(16),
         child: BackdropFilter(
-          // Apply blur effect
           filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
           child: Column(
             children: [
-              // Header Row (Icon, Name, Selected Item / Expand Icon)
+              // Header
               InkWell(
                 onTap: () {
                   setState(() {
-                    expandedSections[type] = !isExpanded;
+                    bool newExpandedState = !isExpanded;
+                    expandedSections[typeKey] = newExpandedState;
+                    if (newExpandedState) {
+                      // 9. Pasamos el typeKey a la función
+                      _refreshComponentList(typeKey);
+                    }
                   });
                 },
                 child: Padding(
@@ -332,13 +486,12 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                       Row(
                         children: [
                           Icon(
-                            icons[type] ??
-                                Icons.help_outline, // Use help icon as fallback
+                            icons[typeKey] ?? Icons.help_outline,
                             color: const Color(0xFFC7384D),
                           ),
-                          const SizedBox(width: 12), // Increased spacing
+                          const SizedBox(width: 12),
                           Text(
-                            displayName,
+                            displayName, // <-- Usamos el nombre de mostrar
                             style:
                                 Theme.of(
                                   context,
@@ -347,21 +500,17 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                                   fontWeight: FontWeight.w600,
                                 ) ??
                                 const TextStyle(
-                                  color: Colors.white, // White text for title
+                                  color: Colors.white,
                                   fontWeight: FontWeight.w600,
                                   fontSize: 16,
                                 ),
                           ),
                         ],
                       ),
-                      // Show selected component name or expand icon
                       if (selectedComp != null && !isExpanded)
                         Expanded(
-                          // Allow text to wrap/ellipsis if needed
                           child: Padding(
-                            padding: const EdgeInsets.only(
-                              left: 16.0,
-                            ), // Add padding
+                            padding: const EdgeInsets.only(left: 16.0),
                             child: Text(
                               selectedComp.name,
                               style: TextStyle(
@@ -376,7 +525,7 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                         )
                       else
                         AnimatedRotation(
-                          turns: isExpanded ? 0.5 : 0, // Rotate arrow up/down
+                          turns: isExpanded ? 0.5 : 0,
                           duration: const Duration(milliseconds: 300),
                           child: const Icon(
                             Icons.expand_more,
@@ -387,56 +536,87 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                   ),
                 ),
               ),
-              // Collapsible Content Area
+              // Contenido Colapsable
               AnimatedSize(
-                // Animate size change
                 duration: const Duration(milliseconds: 300),
                 curve: Curves.easeInOut,
                 child: Container(
-                  // Use height constraint trick for animation
                   height: isExpanded ? null : 0,
-                  clipBehavior: Clip.hardEdge, // Clip content during animation
+                  clipBehavior: Clip.hardEdge,
                   decoration: const BoxDecoration(
-                    // Add a subtle top border when expanded
                     border: Border(top: BorderSide(color: Color(0xFF2A2A2A))),
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      16,
-                      16,
-                      16,
-                      16,
-                    ), // Adjusted padding
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildFilters(type),
-                        const SizedBox(height: 20), // Increased space
-                        // Message if no components available/filtered
-                        if (filteredList.isEmpty)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 24.0),
-                            child: Center(
-                              child: Text(
-                                "No hay componentes que coincidan.",
-                                style: TextStyle(color: Colors.grey[500]),
-                              ),
-                            ),
-                          )
-                        else
-                          ListView.builder(
-                            shrinkWrap: true, // Crucial
-                            physics:
-                                const NeverScrollableScrollPhysics(), // Crucial
-                            itemCount: filteredList.length,
-                            itemBuilder: (context, index) {
-                              // Build the card directly here
-                              return _buildComponentCard(
-                                type,
-                                filteredList[index],
+                        _buildFilters(typeKey), // <-- Pasamos typeKey
+                        const SizedBox(height: 20),
+                        FutureBuilder<PaginatedComponentsResponse>(
+                          future:
+                              _componentFutures[typeKey], // <-- Usamos typeKey
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(24.0),
+                                  child: CircularProgressIndicator(),
+                                ),
                               );
-                            },
-                          ),
+                            }
+                            if (snapshot.hasError) {
+                              return Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: Text(
+                                    'Error: ${snapshot.error}',
+                                    style: TextStyle(color: Colors.red[300]),
+                                  ),
+                                ),
+                              );
+                            }
+                            if (!snapshot.hasData) {
+                              return const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(16.0),
+                                  child: Text(
+                                    'Presiona "Expandir" para buscar...',
+                                  ),
+                                ),
+                              );
+                            }
+
+                            final components = snapshot.data!.components;
+
+                            if (components.isEmpty) {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 24.0,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    "No hay componentes que coincidan.",
+                                    style: TextStyle(color: Colors.grey[500]),
+                                  ),
+                                ),
+                              );
+                            }
+
+                            return ListView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: components.length,
+                              itemBuilder: (context, index) {
+                                return _buildComponentCard(
+                                  typeKey, // <-- Pasamos typeKey
+                                  components[index],
+                                );
+                              },
+                            );
+                          },
+                        ),
                       ],
                     ),
                   ),
@@ -449,23 +629,78 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
     );
   }
 
-  // Builds the filter row for a component section
-  Widget _buildFilters(String type) {
+  // --- ¡FILTROS ACTUALIZADOS! ---
+  Widget _buildFilters(String typeKey) {
+    // 'type' ahora es 'typeKey'
     final theme = Theme.of(context);
-    List<String> brandItems = ['']..addAll(getBrands(type)); // Add 'All' option
+
+    // ... (listas de marcas se mantienen igual) ...
+    final List<String> brandItems = [
+      '',
+      'Intel',
+      'AMD',
+      'NVIDIA',
+      'Gigabyte',
+      'MSI',
+      'ASUS',
+      'Corsair',
+      'Samsung',
+      'Kingston',
+      'Western Digital',
+      'Seagate',
+      'EVGA',
+      'Noctua',
+      'Be Quiet!',
+      'NZXT',
+      'Thermaltake',
+      'Cooler Master',
+      'Lian Li',
+      'HP',
+      'Dell',
+      'Lenovo',
+      'Acer',
+      'Razer',
+    ];
+    final List<String> brandLabels = [
+      'Todas las Marcas',
+      'Intel',
+      'AMD',
+      'NVIDIA',
+      'Gigabyte',
+      'MSI',
+      'ASUS',
+      'Corsair',
+      'Samsung',
+      'Kingston',
+      'Western Digital',
+      'Seagate',
+      'EVGA',
+      'Noctua',
+      'Be Quiet!',
+      'NZXT',
+      'Thermaltake',
+      'Cooler Master',
+      'Lian Li',
+      'HP',
+      'Dell',
+      'Lenovo',
+      'Acer',
+      'Razer',
+    ];
 
     return Wrap(
       spacing: 12,
       runSpacing: 12,
-      crossAxisAlignment: WrapCrossAlignment.end, // Align items vertically
+      crossAxisAlignment: WrapCrossAlignment.end,
       children: [
         // Search Field
         SizedBox(
           width: 200,
           child: _buildFilterTextField(
-            controller: searchControllers[type],
+            controller: searchControllers[typeKey], // <-- Usamos typeKey
             hintText: 'Buscar...',
-            onChanged: (_) => setState(() {}), // Trigger rebuild on change
+            onChanged: (_) =>
+                _refreshComponentList(typeKey), // <-- Usamos typeKey
             icon: Icons.search,
           ),
         ),
@@ -473,10 +708,11 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
         SizedBox(
           width: 100,
           child: _buildFilterTextField(
-            controller: minPriceControllers[type],
+            controller: minPriceControllers[typeKey], // <-- Usamos typeKey
             hintText: 'Min \$',
             keyboardType: TextInputType.number,
-            onChanged: (_) => setState(() {}),
+            onChanged: (_) =>
+                _refreshComponentList(typeKey), // <-- Usamos typeKey
             icon: Icons.attach_money,
           ),
         ),
@@ -484,55 +720,102 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
         SizedBox(
           width: 100,
           child: _buildFilterTextField(
-            controller: maxPriceControllers[type],
+            controller: maxPriceControllers[typeKey], // <-- Usamos typeKey
             hintText: 'Max \$',
             keyboardType: TextInputType.number,
-            onChanged: (_) => setState(() {}),
-            icon: Icons.money_off, // Different icon for max
+            onChanged: (_) =>
+                _refreshComponentList(typeKey), // <-- Usamos typeKey
+            icon: Icons.money_off,
           ),
         ),
-        // Brand Dropdown
-        Container(
-          constraints: const BoxConstraints(
-            minWidth: 150,
-          ), // Ensure minimum width
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          height: 40, // Match TextField height
-          decoration: BoxDecoration(
-            color:
-                theme.inputDecorationTheme.fillColor ??
-                Colors.black.withOpacity(0.4),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFF2A2A2A)),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: selectedBrands[type], // Use state variable
-              isDense: true,
-              dropdownColor: const Color(0xFF1C1C1C), // Darker dropdown
-              icon: Icon(Icons.arrow_drop_down, color: Colors.grey[400]),
-              style: TextStyle(color: Colors.grey[300], fontSize: 14),
-              items: brandItems
-                  .map(
-                    (brand) => DropdownMenuItem(
-                      value: brand,
-                      child: Text(brand.isEmpty ? 'Todas las Marcas' : brand),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (value) {
-                setState(() {
-                  selectedBrands[type] = value ?? ''; // Update state
-                });
-              },
-            ),
-          ),
+
+        _buildFilterDropdown(
+          theme: theme,
+          label: 'Marca',
+          value: selectedBrands[typeKey]!, // <-- Usamos typeKey
+          items: brandItems,
+          itemLabels: brandLabels,
+          onChanged: (value) {
+            setState(() {
+              selectedBrands[typeKey] = value ?? ''; // <-- Usamos typeKey
+            });
+            _refreshComponentList(typeKey); // <-- Usamos typeKey
+          },
+          minWidth: 150,
         ),
       ],
     );
   }
 
-  // Helper for creating styled TextFields used in filters
+  // --- ¡HELPER AÑADIDO! ---
+  Widget _buildFilterDropdown({
+    required ThemeData theme,
+    required String label,
+    required String value,
+    required List<String> items,
+    required List<String> itemLabels,
+    required ValueChanged<String?> onChanged,
+    double minWidth = 150,
+  }) {
+    // ... (Tu código _buildFilterDropdown se mantiene igual) ...
+    return ConstrainedBox(
+      constraints: BoxConstraints(minWidth: minWidth),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style:
+                theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.secondary,
+                ) ??
+                TextStyle(color: theme.colorScheme.secondary, fontSize: 12),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            height: 48,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color:
+                  theme.inputDecorationTheme.fillColor ?? Colors.grey.shade900,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF2A2A2A)),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: value,
+                isExpanded: true,
+                dropdownColor: const Color(0xFF1C1C1C),
+                icon: Icon(
+                  Icons.arrow_drop_down,
+                  color: theme.colorScheme.secondary,
+                ),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.white,
+                ),
+                items: List.generate(items.length, (index) {
+                  return DropdownMenuItem(
+                    value: items[index],
+                    child: Text(
+                      itemLabels[index],
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: Colors.white,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                }),
+                onChanged: onChanged,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Filter TextField (sin cambios)
   Widget _buildFilterTextField({
     required TextEditingController? controller,
     String hintText = '',
@@ -540,16 +823,14 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
     ValueChanged<String>? onChanged,
     IconData? icon,
   }) {
+    // ... (Tu widget _buildFilterTextField se mantiene igual) ...
     return SizedBox(
-      height: 40, // Consistent height for filter inputs
+      height: 40,
       child: TextField(
         controller: controller,
         onChanged: onChanged,
         keyboardType: keyboardType,
-        style: TextStyle(
-          color: Colors.grey[300],
-          fontSize: 14,
-        ), // Input text style
+        style: TextStyle(color: Colors.grey[300], fontSize: 14),
         decoration: InputDecoration(
           hintText: hintText,
           prefixIcon: icon != null
@@ -571,63 +852,66 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
             borderSide: const BorderSide(color: Color(0xFFC7384D)),
-          ), // Use theme color on focus
+          ),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 12,
             vertical: 8,
-          ), // Adjusted padding
+          ),
           isDense: true,
         ),
       ),
     );
   }
 
-  // Builds a card showing a single component choice
-  Widget _buildComponentCard(String type, BuildComponentChoice comp) {
+  // --- Tarjeta de Componente (ACTUALIZADA) ---
+  Widget _buildComponentCard(String typeKey, ComponentCard comp) {
+    // 'type' ahora es 'typeKey'
     final bool isSelected =
-        selectedComponents[type] == comp; // Check if selected
+        selectedComponents[typeKey] == comp; // <-- Usamos typeKey
     final theme = Theme.of(context);
+    const keyComponents = ['cpu', 'motherboard', 'ram', 'gpu'];
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: isSelected
             ? theme.primaryColor.withOpacity(0.15)
-            : Colors.black.withOpacity(0.2), // Highlight if selected
+            : Colors.black.withOpacity(0.2),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isSelected
-              ? theme.primaryColor
-              : const Color(0xFF3A3A3A), // Highlight border
+          color: isSelected ? theme.primaryColor : const Color(0xFF3A3A3A),
         ),
       ),
       child: Material(
-        // Wrap with Material for InkWell effect
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: () {
+          onTap: () async {
             setState(() {
               if (isSelected) {
-                selectedComponents.remove(type); // Deselect if tapped again
+                selectedComponents.remove(typeKey); // <-- Usamos typeKey
               } else {
-                selectedComponents[type] = comp; // Select this component
+                selectedComponents[typeKey] = comp; // <-- Usamos typeKey
               }
             });
+
+            if (keyComponents.contains(typeKey)) {
+              // <-- Usamos typeKey
+              await _runCompatibilityCheck();
+            }
           },
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                // Image
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: Image.network(
-                    comp.img,
+                    comp.imageUrl ?? '',
                     width: 60,
                     height: 60,
-                    fit: BoxFit.contain, // Contain fits components better
+                    fit: BoxFit.contain,
                     errorBuilder: (context, error, stackTrace) {
                       return Container(
                         width: 60,
@@ -642,7 +926,6 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                   ),
                 ),
                 const SizedBox(width: 16),
-                // Name, Brand, Price
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -654,30 +937,57 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                           fontWeight: FontWeight.w600,
                           fontSize: 15,
                         ),
-                      ), // Slightly smaller
+                      ),
                       const SizedBox(height: 4),
                       Text(
-                        'Marca: ${comp.brand}',
+                        'Marca: ${comp.brand ?? "N/A"}',
                         style: const TextStyle(
                           color: Color(0xFFA0A0A0),
                           fontSize: 13,
                         ),
                       ),
                       Text(
-                        'Precio: \$${comp.price} MXN',
+                        'Precio: ${comp.price != null ? currencyFormatter.format(comp.price) : "N/A"} MXN',
                         style: const TextStyle(
                           color: Color(0xFFA0A0A0),
                           fontSize: 13,
                         ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          _buildLink(
+                            context,
+                            text: 'Ver componente',
+                            onTap: () {
+                              Navigator.pushNamed(
+                                context,
+                                '/component-detail',
+                                arguments: comp.id,
+                              );
+                            },
+                          ),
+                          const SizedBox(width: 12),
+                          if (comp.link != null && comp.store != null)
+                            _buildLink(
+                              context,
+                              text: 'Ver en ${comp.store!}',
+                              onTap: () async {
+                                final uri = Uri.tryParse(comp.link!);
+                                if (uri != null && await canLaunchUrl(uri)) {
+                                  await launchUrl(
+                                    uri,
+                                    mode: LaunchMode.externalApplication,
+                                  );
+                                }
+                              },
+                            ),
+                        ],
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(width: 16),
-                // Links (optional - consider showing them differently, maybe on hover/tap)
-                // Wrap( ... ) // Kept original links for now
-
-                // Selection Indicator (Checkmark)
                 Icon(
                   isSelected ? Icons.check_circle : Icons.add_circle_outline,
                   color: isSelected ? theme.primaryColor : Colors.grey[600],
@@ -691,10 +1001,37 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
     );
   }
 
-  // Builds the sidebar summarizing the selected components and total price
+  // Helper para los links (sin cambios)
+  Widget _buildLink(
+    BuildContext context, {
+    required String text,
+    required VoidCallback onTap,
+  }) {
+    // ... (Tu código _buildLink se mantiene igual) ...
+    return InkWell(
+      onTap: onTap,
+      child: Text(
+        text,
+        style: TextStyle(
+          color: Theme.of(context).primaryColor,
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          decoration: TextDecoration.underline,
+          decorationColor: Theme.of(context).primaryColor,
+        ),
+      ),
+    );
+  }
+
+  // Sidebar (ACTUALIZADO)
   Widget _buildSidebar() {
     final theme = Theme.of(context);
     final bool hasSelection = selectedComponents.isNotEmpty;
+
+    final double totalPrice = selectedComponents.values.fold(
+      0.0,
+      (sum, comp) => sum + (comp.price ?? 0.0),
+    );
 
     return Container(
       decoration: BoxDecoration(
@@ -703,7 +1040,6 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
       ),
       child: Column(
         children: [
-          // Header
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
             child: Text(
@@ -721,8 +1057,6 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
             ),
           ),
           const Divider(color: Color(0xFF2A2A2A), height: 1),
-
-          // List of selected components
           Expanded(
             child: !hasSelection
                 ? Center(
@@ -732,19 +1066,15 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                     ),
                   )
                 : ListView(
-                    // <-- Apply fixes here
                     padding: const EdgeInsets.all(24),
                     children: selectedComponents.entries.map((entry) {
-                      // ... (rest of the map function remains the same) ...
-                      final type = entry.key;
+                      final typeKey = entry.key; // <-- Usamos typeKey
                       final comp = entry.value;
-                      final displayName = type
-                          .replaceAll('_', ' ')
-                          .split(' ')
-                          .map(
-                            (word) => word[0].toUpperCase() + word.substring(1),
-                          )
-                          .join(' ');
+
+                      // 10. Usamos el mapa de nombres para mostrar
+                      final displayName =
+                          displayNames[typeKey] ?? typeKey.toUpperCase();
+
                       return Container(
                         margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.all(12),
@@ -755,7 +1085,8 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                         child: Row(
                           children: [
                             Icon(
-                              icons[type] ?? Icons.help_outline,
+                              icons[typeKey] ??
+                                  Icons.help_outline, // <-- Usamos typeKey
                               color: theme.primaryColor,
                               size: 20,
                             ),
@@ -765,7 +1096,7 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    displayName,
+                                    displayName, // <-- Usamos el nombre de mostrar
                                     style: TextStyle(
                                       fontWeight: FontWeight.w600,
                                       fontSize: 12,
@@ -784,16 +1115,16 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                               ),
                             ),
                             const SizedBox(width: 12),
-                            // Price of the selected component
                             Text(
-                              "\$${comp.price}",
+                              comp.price != null
+                                  ? currencyFormatter.format(comp.price)
+                                  : "N/A",
                               style: const TextStyle(
                                 fontSize: 14,
                                 color: Colors.white,
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
-                            // Optional: Remove button
                             IconButton(
                               icon: Icon(
                                 Icons.close,
@@ -805,7 +1136,9 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                               tooltip: "Quitar ${displayName}",
                               onPressed: () {
                                 setState(() {
-                                  selectedComponents.remove(type);
+                                  selectedComponents.remove(
+                                    typeKey,
+                                  ); // <-- Usamos typeKey
                                 });
                               },
                             ),
@@ -815,17 +1148,14 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                     }).toList(),
                   ),
           ),
-
-          // Footer with Total Price and Actions
           Container(
             padding: const EdgeInsets.all(24),
             decoration: const BoxDecoration(
-              color: Color(0xFF101010), // Darker footer background
+              color: Color(0xFF101010),
               border: Border(top: BorderSide(color: Color(0xFF2A2A2A))),
             ),
             child: Column(
               children: [
-                // Total Price Display
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -834,7 +1164,7 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                       style: TextStyle(color: Colors.grey[400], fontSize: 16),
                     ),
                     Text(
-                      '\$$totalPrice MXN',
+                      '${currencyFormatter.format(totalPrice)} MXN',
                       style: TextStyle(
                         color: theme.primaryColor,
                         fontWeight: FontWeight.bold,
@@ -844,20 +1174,25 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                   ],
                 ),
                 const SizedBox(height: 20),
-                // Action Buttons
                 ElevatedButton.icon(
-                  onPressed: hasSelection
-                      ? () {
-                          /* TODO: Save Build Logic */
-                        }
-                      : null, // Disable if no selection
-                  icon: const Icon(Icons.save, size: 18),
-                  label: const Text('Guardar Build'),
+                  onPressed: hasSelection && !_isSaving
+                      ? () => _handleCreateBuild(false)
+                      : null,
+                  icon: _isSaving
+                      ? Container(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.save, size: 18),
+                  label: Text(_isSaving ? 'Guardando...' : 'Guardar Build'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: theme.primaryColor,
                     foregroundColor: Colors.white,
-                    disabledBackgroundColor:
-                        Colors.grey[800], // Style for disabled state
+                    disabledBackgroundColor: Colors.grey[800],
                     minimumSize: const Size(double.infinity, 48),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -866,21 +1201,27 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                 ),
                 const SizedBox(height: 12),
                 OutlinedButton.icon(
-                  // Changed to OutlinedButton for secondary action
-                  onPressed: hasSelection
-                      ? () {
-                          /* TODO: Publish Build Logic */
-                        }
-                      : null, // Disable if no selection
-                  icon: const Icon(Icons.public, size: 18),
-                  label: const Text('Publicar Build'),
+                  onPressed: hasSelection && !_isSaving
+                      ? () => _handleCreateBuild(true)
+                      : null,
+                  icon: _isSaving
+                      ? Container(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.grey[300],
+                          ),
+                        )
+                      : const Icon(Icons.public, size: 18),
+                  label: Text(_isSaving ? 'Publicando...' : 'Publicar Build'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.grey[300],
                     side: BorderSide(
                       color: hasSelection
                           ? theme.primaryColor.withOpacity(0.5)
                           : Colors.grey[800]!,
-                    ), // Border color changes
+                    ),
                     disabledForegroundColor: Colors.grey[700],
                     minimumSize: const Size(double.infinity, 48),
                     shape: RoundedRectangleBorder(
@@ -895,4 +1236,4 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
       ),
     );
   }
-} // --- END OF STATE CLASS ---
+}

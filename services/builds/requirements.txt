@@ -1,9 +1,10 @@
-# requirements.txt para services/builds
+# services/builds/requirements.txt
 fastapi
 uvicorn[standard]
-sqlalchemy
+alembic
+python-decouple
+sqlalchemy[asyncio]
 asyncpg
-pydantic
-pydantic-settings
-httpx
-python-dotenv
+
+# --- ¡AÑADE ESTA LÍNEA! ---
+google-generativeai

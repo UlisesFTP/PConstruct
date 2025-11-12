@@ -2,7 +2,10 @@
 
 import 'package:flutter/material.dart';
 import 'dart:ui';
-import 'package:my_app/models/pc_build.dart'; // <-- Importa el nuevo modelo
+import 'package:provider/provider.dart';
+import 'package:my_app/core/api/api_client.dart';
+import 'package:my_app/models/build.dart';
+import 'package:intl/intl.dart';
 
 class MyBuildsPage extends StatefulWidget {
   const MyBuildsPage({super.key});
@@ -12,38 +15,81 @@ class MyBuildsPage extends StatefulWidget {
 }
 
 class _MyBuildsPageState extends State<MyBuildsPage> {
-  // Datos mock de tu ejemplo
-  final List<PCBuild> builds = [
-    PCBuild(
-      name: 'Build "Titán Gamer"',
-      createdDate: '15/07/2024',
-      cpu: 'Intel Core i9-13900K',
-      gpu: 'NVIDIA GeForce RTX 4090',
-      ram: '32GB DDR5 6000MHz',
-    ),
-    PCBuild(
-      name: 'Workstation "Creativa"',
-      createdDate: '02/06/2024',
-      cpu: 'AMD Ryzen 9 7950X',
-      gpu: 'NVIDIA RTX 3060 Ti',
-      ram: '64GB DDR5 5200MHz',
-    ),
-    PCBuild(
-      name: 'Build "Presupuesto Consciente"',
-      createdDate: '21/05/2024',
-      cpu: 'AMD Ryzen 5 5600G',
-      gpu: 'Gráficos Integrados',
-      ram: '16GB DDR4 3200MHz',
-    ),
-  ];
+  late Future<List<BuildSummary>> _buildsFuture;
+  late ApiClient _apiClient;
 
-  // TODO: Reemplazar esto con un FutureBuilder cuando tengamos el endpoint
+  @override
+  void initState() {
+    super.initState();
+    _apiClient = Provider.of<ApiClient>(context, listen: false);
+    _loadBuilds();
+  }
+
+  void _loadBuilds() {
+    setState(() {
+      _buildsFuture = _apiClient.getMyBuilds();
+    });
+  }
+
+  Future<void> _deleteBuild(String buildId) async {
+    final bool confirm =
+        await showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: const Color(0xFF1A1A1C),
+            title: const Text(
+              'Confirmar Eliminación',
+              style: TextStyle(color: Colors.white),
+            ),
+            content: Text(
+              '¿Estás seguro de que deseas eliminar esta build? Esta acción no se puede deshacer.',
+              style: TextStyle(color: Colors.grey[300]),
+            ),
+            actions: [
+              TextButton(
+                child: Text(
+                  'Cancelar',
+                  style: TextStyle(color: Colors.grey[400]),
+                ),
+                onPressed: () => Navigator.of(context).pop(false),
+              ),
+              TextButton(
+                child: Text(
+                  'Eliminar',
+                  style: TextStyle(color: Theme.of(context).primaryColor),
+                ),
+                onPressed: () => Navigator.of(context).pop(true),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (confirm) {
+      try {
+        await _apiClient.deleteBuild(buildId);
+        _loadBuilds();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Build eliminada exitosamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al eliminar la build: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final bool isDesktop = MediaQuery.of(context).size.width >= 768;
 
-    // No usamos Scaffold, solo el contenido
     return SingleChildScrollView(
       padding: EdgeInsets.symmetric(
         horizontal: isDesktop ? 32 : 24,
@@ -69,7 +115,7 @@ class _MyBuildsPageState extends State<MyBuildsPage> {
                   ),
                   ElevatedButton.icon(
                     onPressed: () {
-                      // TODO: Navegar a la página de creación de build
+                      Navigator.pushNamed(context, '/builds/create');
                     },
                     icon: const Icon(Icons.add_circle, color: Colors.white),
                     label: const Text(
@@ -94,13 +140,63 @@ class _MyBuildsPageState extends State<MyBuildsPage> {
               ),
               const SizedBox(height: 32),
 
-              // Lista de builds
-              ...builds.map((build) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 24),
-                  child: BuildCard(pcBuild: build),
-                );
-              }).toList(),
+              // FutureBuilder
+              FutureBuilder<List<BuildSummary>>(
+                future: _buildsFuture,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32.0),
+                        child: CircularProgressIndicator(),
+                      ),
+                    );
+                  }
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(32.0),
+                        child: Text(
+                          'Error al cargar tus builds: ${snapshot.error}',
+                          style: TextStyle(color: Colors.grey[400]),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    );
+                  }
+                  if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(32.0),
+                        child: Text(
+                          'Aún no has guardado ninguna build. ¡Crea una!',
+                          style: TextStyle(color: Colors.grey[400]),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    );
+                  }
+
+                  final builds = snapshot.data!;
+                  return ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: builds.length,
+                    itemBuilder: (context, index) {
+                      final build = builds[index];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 24),
+                        child: BuildCard(
+                          // --- CORRECCIÓN 1 ---
+                          // Pasamos la variable al nuevo nombre 'buildSummary'
+                          buildSummary: build,
+                          onDelete: () => _deleteBuild(build.id),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ],
           ),
         ),
@@ -109,14 +205,29 @@ class _MyBuildsPageState extends State<MyBuildsPage> {
   }
 }
 
-// TARJETA DE BUILD (Copiada de tu código)
+// TARJETA DE BUILD (Actualizada para usar BuildSummary)
 class BuildCard extends StatelessWidget {
-  final PCBuild pcBuild;
-  const BuildCard({super.key, required this.pcBuild});
+  // --- CORRECCIÓN 2 ---
+  // Renombramos el campo de 'build' a 'buildSummary'
+  final BuildSummary buildSummary;
+  final VoidCallback onDelete;
 
+  // Actualizamos el constructor
+  const BuildCard({
+    super.key,
+    required this.buildSummary,
+    required this.onDelete,
+  });
+
+  // El método build() se mantiene igual
   @override
   Widget build(BuildContext context) {
     final bool isMobile = MediaQuery.of(context).size.width < 768;
+    final DateFormat formatter = DateFormat('dd/MM/yyyy');
+    // Usamos el nuevo nombre de variable
+    final String createdDate = formatter.format(
+      buildSummary.createdAt.toLocal(),
+    );
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(12.0),
@@ -133,7 +244,7 @@ class BuildCard extends StatelessWidget {
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildContent(),
+                    _buildContent(context, createdDate),
                     const SizedBox(height: 16),
                     _buildActions(),
                   ],
@@ -141,7 +252,7 @@ class BuildCard extends StatelessWidget {
               : Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(child: _buildContent()),
+                    Expanded(child: _buildContent(context, createdDate)),
                     const SizedBox(width: 16),
                     _buildActions(),
                   ],
@@ -151,21 +262,47 @@ class BuildCard extends StatelessWidget {
     );
   }
 
-  Widget _buildContent() {
+  // --- CORRECCIÓN 3 ---
+  // Usamos 'buildSummary' en lugar de 'build'
+  Widget _buildContent(BuildContext context, String createdDate) {
+    final currencyFormatter = NumberFormat.currency(
+      locale: 'es_MX',
+      symbol: '\$',
+    );
+    // Usamos el nuevo nombre de variable
+    final String totalPrice = currencyFormatter.format(buildSummary.totalPrice);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          pcBuild.name,
-          style: const TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                buildSummary.name, // <-- Dato real
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Text(
+              totalPrice, // <-- Dato real (formateado)
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).primaryColor,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 8),
         Text(
-          'Creada el: ${pcBuild.createdDate}',
+          'Creada el: $createdDate', // <-- Dato real (formateado)
           style: const TextStyle(color: Color(0xFFA0A0A0), fontSize: 14),
         ),
         const SizedBox(height: 16),
@@ -173,9 +310,14 @@ class BuildCard extends StatelessWidget {
           spacing: 16,
           runSpacing: 12,
           children: [
-            _buildSpec(Icons.memory, 'CPU:', pcBuild.cpu),
-            _buildSpec(Icons.developer_board, 'GPU:', pcBuild.gpu),
-            _buildSpec(Icons.dns, 'RAM:', pcBuild.ram),
+            // Usamos el nuevo nombre de variable
+            _buildSpec(Icons.memory, 'CPU:', buildSummary.cpuName ?? 'N/A'),
+            _buildSpec(
+              Icons.developer_board,
+              'GPU:',
+              buildSummary.gpuName ?? 'N/A',
+            ),
+            _buildSpec(Icons.dns, 'RAM:', buildSummary.ramName ?? 'N/A'),
           ],
         ),
       ],
@@ -214,7 +356,8 @@ class BuildCard extends StatelessWidget {
       children: [
         IconButton(
           onPressed: () {
-            // Ver detalles
+            // TODO: Navegar a la página de detalle de la build
+            // (requerirá pasar buildSummary.id)
           },
           icon: const Icon(Icons.visibility, color: Color(0xFFE0E0E0)),
           tooltip: 'Ver detalles',
@@ -224,7 +367,8 @@ class BuildCard extends StatelessWidget {
         const SizedBox(width: 8),
         IconButton(
           onPressed: () {
-            // Editar build
+            // TODO: Navegar a la página de edición
+            // (requerirá pasar la build completa o su id)
           },
           icon: const Icon(Icons.edit, color: Color(0xFFE0E0E0)),
           tooltip: 'Editar build',
@@ -233,10 +377,8 @@ class BuildCard extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         IconButton(
-          onPressed: () {
-            // Eliminar build
-          },
-          icon: const Icon(Icons.delete, color: Color(0xFFE0E0E0)),
+          onPressed: onDelete, // ¡Acción conectada!
+          icon: const Icon(Icons.delete, color: Colors.redAccent),
           tooltip: 'Eliminar build',
           padding: const EdgeInsets.all(8),
           constraints: const BoxConstraints(),

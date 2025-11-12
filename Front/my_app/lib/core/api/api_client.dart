@@ -12,6 +12,10 @@ import '../../models/component_review.dart';
 import '../../models/comment_componente.dart';
 // ---------------------------------------------------
 
+// --- ¡NUEVA IMPORTACIÓN DE MODELOS DE BUILDS! ---
+import '../../models/build.dart'; // Importa BuildRead, BuildSummary, BuildCreate
+// -------------------------------------------------
+
 // --- Clase auxiliar para la respuesta paginada ---
 class PaginatedComponentsResponse {
   final List<ComponentCard> components;
@@ -257,10 +261,7 @@ class ApiClient {
     }
   }
 
-  // --- ¡NUEVOS MÉTODOS DEL SERVICIO DE COMPONENTES! ---
-
-  /// Llama a GET /components/
-  /// Obtiene la lista paginada y filtrada de componentes.
+  // --- MÉTODOS DEL SERVICIO DE COMPONENTES (Sin cambios) ---
   Future<PaginatedComponentsResponse> fetchComponents({
     int page = 1,
     int pageSize = 20,
@@ -272,7 +273,6 @@ class ApiClient {
     String? sortBy,
   }) async {
     try {
-      // 1. Construir los Query Parameters
       final queryParams = <String, dynamic>{
         'page': page,
         'page_size': pageSize,
@@ -285,13 +285,11 @@ class ApiClient {
       if (search != null && search.isNotEmpty) queryParams['search'] = search;
       if (sortBy != null && sortBy.isNotEmpty) queryParams['sort_by'] = sortBy;
 
-      // 2. Hacer la llamada (la ruta base es '/components' del router del gateway)
       final response = await _dio.get(
         '/components/',
         queryParameters: queryParams,
       );
 
-      // 3. Parsear la respuesta
       final data = response.data as Map<String, dynamic>;
       final itemsList = (data['items'] as List<dynamic>)
           .map((item) => ComponentCard.fromJson(item as Map<String, dynamic>))
@@ -307,8 +305,6 @@ class ApiClient {
     }
   }
 
-  /// Llama a GET /components/{componentId}
-  /// Obtiene el detalle completo de un componente.
   Future<ComponentDetail> fetchComponentDetail(int componentId) async {
     try {
       final response = await _dio.get('/components/$componentId');
@@ -319,8 +315,6 @@ class ApiClient {
     }
   }
 
-  /// Llama a POST /components/{componentId}/reviews
-  /// (Ruta Protegida) Publica una nueva reseña.
   Future<ComponentReview> postReview({
     required int componentId,
     required int rating,
@@ -332,17 +326,11 @@ class ApiClient {
         '/components/$componentId/reviews',
         data: {'rating': rating, 'title': title, 'content': content},
       );
-
-      // --- ¡INICIO DE CORRECCIÓN! ---
-      // Si el backend devuelve 201 (Creado) pero el cuerpo es nulo
-      // o no es un mapa, lanzamos un error controlado.
       if (response.data == null || response.data is! Map<String, dynamic>) {
         throw Exception(
           'La reseña fue creada pero no se recibió respuesta (Respuesta: ${response.data})',
         );
       }
-      // --- FIN DE CORRECCIÓN! ---
-
       return ComponentReview.fromJson(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
       _handleDioError(e, 'Error al publicar la reseña.');
@@ -350,8 +338,6 @@ class ApiClient {
     }
   }
 
-  /// Llama a POST /components/{componentId}/reviews/{reviewId}/comments
-  /// (Ruta Protegida) Publica un nuevo comentario en una reseña.
   Future<CommentComponente> postCommentOnReview({
     required int componentId,
     required int reviewId,
@@ -365,6 +351,94 @@ class ApiClient {
       return CommentComponente.fromJson(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
       _handleDioError(e, 'Error al publicar el comentario.');
+      rethrow;
+    }
+  }
+
+  // =======================================================
+  // --- ¡NUEVOS MÉTODOS DEL SERVICIO DE BUILDS! ---
+  // =======================================================
+
+  /// Llama a POST /builds/
+  /// (Ruta Protegida) Crea una nueva build.
+  Future<BuildRead> createBuild(BuildCreate buildData) async {
+    try {
+      final response = await _dio.post(
+        '/api/v1/builds/', // <-- AÑADIR /api/v1
+        data: buildData.toJson(),
+      );
+      return BuildRead.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      _handleDioError(e, 'Error al crear la build.');
+      rethrow;
+    }
+  }
+
+  /// Llama a GET /api/v1/builds/my-builds
+  Future<List<BuildSummary>> getMyBuilds() async {
+    try {
+      final response = await _dio.get(
+        '/api/v1/builds/my-builds',
+      ); // <-- AÑADIR /api/v1
+      final List<dynamic> data = response.data;
+      return data.map((json) => BuildSummary.fromJson(json)).toList();
+    } on DioException catch (e) {
+      _handleDioError(e, 'Error al cargar mis builds.');
+      rethrow;
+    }
+  }
+
+  /// Llama a GET /api/v1/builds/community
+  Future<List<BuildSummary>> getCommunityBuilds() async {
+    try {
+      final response = await _dio.get(
+        '/api/v1/builds/community',
+      ); // <-- AÑADIR /api/v1
+      final List<dynamic> data = response.data;
+      return data.map((json) => BuildSummary.fromJson(json)).toList();
+    } on DioException catch (e) {
+      _handleDioError(e, 'Error al cargar las builds de la comunidad.');
+      rethrow;
+    }
+  }
+
+  /// Llama a GET /api/v1/builds/{buildId}
+  Future<BuildRead> getBuildDetail(String buildId) async {
+    try {
+      final response = await _dio.get(
+        '/api/v1/builds/$buildId',
+      ); // <-- AÑADIR /api/v1
+      return BuildRead.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      _handleDioError(e, 'Error al cargar el detalle de la build.');
+      rethrow;
+    }
+  }
+
+  /// Llama a DELETE /api/v1/builds/{buildId}
+  Future<void> deleteBuild(String buildId) async {
+    try {
+      await _dio.delete('/api/v1/builds/$buildId'); // <-- AÑADIR /api/v1
+    } on DioException catch (e) {
+      _handleDioError(e, 'Error al eliminar la build.');
+      rethrow;
+    }
+  }
+
+  /// Llama a POST /api/v1/builds/check-compatibility
+  Future<CompatibilityResponse> checkCompatibility(
+    Map<String, String?> components,
+  ) async {
+    try {
+      final response = await _dio.post(
+        '/api/v1/builds/check-compatibility', // <-- AÑADIR /api/v1
+        data: {'components': components},
+      );
+      return CompatibilityResponse.fromJson(
+        response.data as Map<String, dynamic>,
+      );
+    } on DioException catch (e) {
+      _handleDioError(e, 'Error al verificar la compatibilidad.');
       rethrow;
     }
   }

@@ -1,27 +1,14 @@
 import 'package:flutter/material.dart';
-import 'dart:ui'; // Necesario para BackdropFilter si lo usas en las tarjetas
+import 'dart:ui'; // Necesario para BackdropFilter
+import 'package:provider/provider.dart';
+import 'package:my_app/core/api/api_client.dart';
+// Importamos el nuevo modelo y quitamos el mock
+import 'package:my_app/models/build.dart';
+// Para formatear fechas (timeago)
+import 'package:timeago/timeago.dart' as timeago;
 
-// Modelo simple para los datos de la build (puedes moverlo a models/ si prefieres)
-class CommunityBuild {
-  final String authorName;
-  final String authorAvatarUrl;
-  final String timeAgo;
-  final String title;
-  final String description;
-  final String imageUrl;
-  final int likes;
-  // Añade más campos si los necesitas (componentes, etc.)
-
-  CommunityBuild({
-    required this.authorName,
-    required this.authorAvatarUrl,
-    required this.timeAgo,
-    required this.title,
-    required this.description,
-    required this.imageUrl,
-    required this.likes,
-  });
-}
+// ❌ Eliminamos la clase mock 'CommunityBuild'
+// class CommunityBuild { ... }
 
 class BuildsPage extends StatefulWidget {
   const BuildsPage({super.key});
@@ -31,7 +18,7 @@ class BuildsPage extends StatefulWidget {
 }
 
 class _BuildsPageState extends State<BuildsPage> {
-  // <-- START OF STATE CLASS
+  // Controladores de filtros (se mantienen)
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _cpuController = TextEditingController();
   final TextEditingController _gpuController = TextEditingController();
@@ -39,33 +26,29 @@ class _BuildsPageState extends State<BuildsPage> {
   final TextEditingController _ramController = TextEditingController();
   String _selectedUseType = 'Todos';
 
-  // --- DATOS MOCK ---
-  final List<CommunityBuild> communityBuilds = [
-    CommunityBuild(
-      authorName: 'Carlos Dev',
-      authorAvatarUrl: 'https://randomuser.me/api/portraits/men/45.jpg',
-      timeAgo: 'hace 2 horas',
-      title: 'Mi nuevo setup para desarrollo y gaming!',
-      description:
-          'Después de meses de investigación y gracias a las recomendaciones '
-          'de la plataforma, ¡finalmente armé mi PC! Aquí les comparto los '
-          'componentes y una foto del resultado final. ¡El rendimiento es increíble!',
-      imageUrl: 'https://cdn.mos.cms.futurecdn.net/3mB4dZrRtg8gzDrM8Pvn2R.jpg',
-      likes: 128,
-    ),
-    CommunityBuild(
-      authorName: 'Ana Gamer',
-      authorAvatarUrl: 'https://randomuser.me/api/portraits/women/33.jpg',
-      timeAgo: 'hace 1 día',
-      title: 'Build económica para 1080p Ultra',
-      description:
-          'Quería algo potente sin gastar una fortuna. ¡Esta combinación de Ryzen 5 y RX 6600 funciona de maravilla!',
-      imageUrl:
-          'https://images.pexels.com/photos/777001/pexels-photo-777001.jpeg?auto=compress&cs=tinysrgb&dpr=1&w=500', // Placeholder
-      likes: 95,
-    ),
-  ];
-  // --- FIN DATOS MOCK ---
+  // ❌ Eliminamos la lista de datos mock
+  // final List<CommunityBuild> communityBuilds = [ ... ];
+
+  // ¡NUEVO ESTADO!
+  late Future<List<BuildSummary>> _buildsFuture;
+  late ApiClient _apiClient;
+
+  @override
+  void initState() {
+    super.initState();
+    _apiClient = Provider.of<ApiClient>(context, listen: false);
+    // Seteamos el idioma para timeago
+    timeago.setLocaleMessages('es', timeago.EsMessages());
+    _loadBuilds();
+  }
+
+  // Nueva función para cargar o refrescar las builds
+  void _loadBuilds() {
+    // TODO: Usar los controladores de filtros para la llamada a la API
+    setState(() {
+      _buildsFuture = _apiClient.getCommunityBuilds();
+    });
+  }
 
   @override
   void dispose() {
@@ -79,7 +62,6 @@ class _BuildsPageState extends State<BuildsPage> {
 
   @override
   Widget build(BuildContext context) {
-    // context is available here
     final bool showSidebar = MediaQuery.of(context).size.width > 1024;
 
     return Stack(
@@ -96,6 +78,7 @@ class _BuildsPageState extends State<BuildsPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Header (se mantiene igual)
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -114,13 +97,12 @@ class _BuildsPageState extends State<BuildsPage> {
                                   maxWidth: 300,
                                 ),
                                 child: TextField(
-                                  controller:
-                                      _searchController, // Access state variable
+                                  controller: _searchController,
                                   decoration: _inputDecoration(
                                     hintText: 'Buscar builds...',
-                                  ), // Call method within state
+                                  ),
                                   onChanged: (value) {
-                                    setState(() {});
+                                    // TODO: Implementar debouncing y búsqueda
                                   },
                                 ),
                               ),
@@ -128,17 +110,67 @@ class _BuildsPageState extends State<BuildsPage> {
                           ],
                         ),
                         const SizedBox(height: 32),
-                        ListView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount:
-                              communityBuilds.length, // Access state variable
-                          itemBuilder: (context, index) {
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 24.0),
-                              child: _buildBuildCard(
-                                communityBuilds[index],
-                              ), // Call method within state
+
+                        // ¡NUEVO: FUTURE BUILDER!
+                        FutureBuilder<List<BuildSummary>>(
+                          future: _buildsFuture,
+                          builder: (context, snapshot) {
+                            // 1. Estado de Carga
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(32.0),
+                                  child: CircularProgressIndicator(),
+                                ),
+                              );
+                            }
+                            // 2. Estado de Error
+                            if (snapshot.hasError) {
+                              return Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(32.0),
+                                  child: Text(
+                                    'Error al cargar las builds: ${snapshot.error}',
+                                    style: TextStyle(color: Colors.grey[400]),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              );
+                            }
+                            // 3. Estado sin Datos
+                            if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                              return Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(32.0),
+                                  child: Text(
+                                    'Aún no hay builds en la comunidad.',
+                                    style: TextStyle(color: Colors.grey[400]),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              );
+                            }
+
+                            // 4. Estado con Datos
+                            final builds = snapshot.data!;
+                            return ListView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: builds.length,
+                              itemBuilder: (context, index) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 24.0),
+
+                                  // --- ¡CORRECCIÓN AQUÍ! ---
+                                  // Se pasa como un argumento posicional, no nombrado.
+                                  child: _CommunityBuildCard(
+                                    builds[index], // <-- Se quita 'build:'
+                                  ),
+
+                                  // --- FIN DE LA CORRECCIÓN ---
+                                );
+                              },
                             );
                           },
                         ),
@@ -148,9 +180,10 @@ class _BuildsPageState extends State<BuildsPage> {
                 ),
               ),
             ),
-            if (showSidebar) _buildSidebar(), // Call method within state
+            if (showSidebar) _buildSidebar(),
           ],
         ),
+        // Botón FAB (se mantiene igual)
         Positioned(
           bottom: 24,
           right: 24,
@@ -186,10 +219,16 @@ class _BuildsPageState extends State<BuildsPage> {
     );
   }
 
-  // --- WIDGETS INTERNOS (NOW INSIDE THE STATE CLASS) ---
+  // --- WIDGETS INTERNOS (MODIFICADOS) ---
 
-  Widget _buildBuildCard(CommunityBuild build) {
-    // This method now correctly belongs to the State class
+  // ¡WIDGET DE TARJETA ACTUALIZADO!
+  // La definición es correcta (acepta un argumento posicional)
+  Widget _CommunityBuildCard(BuildSummary build) {
+    final timeAgoString = timeago.format(
+      build.createdAt.toLocal(),
+      locale: 'es',
+    );
+
     return Container(
       decoration: BoxDecoration(
         color: const Color.fromRGBO(28, 28, 28, 0.8),
@@ -205,25 +244,24 @@ class _BuildsPageState extends State<BuildsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Header (Avatar, Nombre de Usuario, Tiempo)
                 Row(
                   children: [
-                    CircleAvatar(
-                      radius: 24,
-                      backgroundImage: NetworkImage(build.authorAvatarUrl),
-                    ),
+                    // TODO: Reemplazar con avatar real cuando esté en la API
+                    const CircleAvatar(radius: 24, child: Icon(Icons.person)),
                     const SizedBox(width: 16),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          build.authorName,
+                          build.userName, // <-- Dato real
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
                           ),
                         ),
                         Text(
-                          build.timeAgo,
+                          timeAgoString, // <-- Dato real (formateado)
                           style: const TextStyle(
                             fontSize: 12,
                             color: Color(0xFFA0A0A0),
@@ -234,44 +272,62 @@ class _BuildsPageState extends State<BuildsPage> {
                   ],
                 ),
                 const SizedBox(height: 16),
+                // Título de la build
                 Text(
-                  build.title,
+                  build.name, // <-- Dato real (es el 'title' de la build)
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  build.description,
-                  style: const TextStyle(color: Color(0xFFE0E0E0)),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 16),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.network(
-                    build.imageUrl,
-                    width: double.infinity,
-                    height: 200,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        height: 200,
-                        color: Colors.grey[800],
-                        child: const Center(
-                          child: Icon(
-                            Icons.image,
-                            size: 50,
-                            color: Colors.grey,
+
+                // ❌ Descripción eliminada (no está en BuildSummary)
+
+                // Imagen (si existe)
+                if (build.imageUrl != null && build.imageUrl!.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.network(
+                      build.imageUrl!, // <-- Dato real
+                      width: double.infinity,
+                      height: 200,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          height: 200,
+                          color: Colors.grey[800],
+                          child: const Center(
+                            child: Icon(
+                              Icons.image,
+                              size: 50,
+                              color: Colors.grey,
+                            ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
+                ],
+
+                // ¡NUEVO: Componentes clave!
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 12,
+                  children: [
+                    _buildSpec(Icons.memory, 'CPU:', build.cpuName ?? 'N/A'),
+                    _buildSpec(
+                      Icons.developer_board,
+                      'GPU:',
+                      build.gpuName ?? 'N/A',
+                    ),
+                    _buildSpec(Icons.dns, 'RAM:', build.ramName ?? 'N/A'),
+                  ],
                 ),
+
+                // Footer (Likes / Ver Detalles)
                 const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.only(top: 16),
@@ -281,23 +337,25 @@ class _BuildsPageState extends State<BuildsPage> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
+                      // TODO: Añadir 'likes' al backend y conectarlo aquí
                       Row(
-                        children: [
-                          const Icon(
+                        children: const [
+                          Icon(
                             Icons.whatshot,
-                            color: Color(0xFFC7384D),
+                            color: Color(0xFFA0A0A0), // Apagado por ahora
                             size: 20,
                           ),
-                          const SizedBox(width: 8),
+                          SizedBox(width: 8),
                           Text(
-                            build.likes.toString(),
-                            style: const TextStyle(color: Color(0xFFA0A0A0)),
+                            '0', // Placeholder
+                            style: TextStyle(color: Color(0xFFA0A0A0)),
                           ),
                         ],
                       ),
                       InkWell(
                         onTap: () {
-                          /* TODO */
+                          // TODO: Navegar al detalle de la build
+                          // Navigator.pushNamed(context, '/build-detail', arguments: build.id);
                         },
                         child: Row(
                           children: const [
@@ -325,8 +383,36 @@ class _BuildsPageState extends State<BuildsPage> {
     );
   }
 
+  // Helper para mostrar specs (copiado de my_builds_page)
+  Widget _buildSpec(IconData icon, String label, String value) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: const Color(0xFFC7384D), size: 20),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFFE0E0E0),
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+          ),
+        ),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            value,
+            style: const TextStyle(color: Color(0xFFE0E0E0), fontSize: 14),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Sidebar (sin cambios)
   Widget _buildSidebar() {
-    // This method now correctly belongs to the State class
+    // ... (Tu código de _buildSidebar se mantiene igual)
     return Container(
       width: 288,
       decoration: BoxDecoration(
@@ -410,6 +496,7 @@ class _BuildsPageState extends State<BuildsPage> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
+                  // TODO: Llamar a _loadBuilds() con los filtros aplicados
                   print("Aplicar filtros");
                 },
                 style: ElevatedButton.styleFrom(
@@ -432,8 +519,8 @@ class _BuildsPageState extends State<BuildsPage> {
     );
   }
 
+  // _buildFilterField (sin cambios)
   Widget _buildFilterField({required String label, required Widget child}) {
-    // This method now correctly belongs to the State class
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -447,8 +534,8 @@ class _BuildsPageState extends State<BuildsPage> {
     );
   }
 
+  // _inputDecoration (sin cambios)
   InputDecoration _inputDecoration({String? hintText}) {
-    // This method now correctly belongs to the State class
     return InputDecoration(
       hintText: hintText,
       filled: true,
@@ -470,4 +557,4 @@ class _BuildsPageState extends State<BuildsPage> {
       isDense: true,
     );
   }
-} // <-- END OF STATE CLASS
+}

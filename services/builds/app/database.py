@@ -1,37 +1,29 @@
-import os
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+# services/builds/app/database.py
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
-from dotenv import load_dotenv
-from pathlib import Path
+from .config import DATABASE_URL
+from typing import AsyncGenerator
 
-env_path = Path(__file__).parent.parent.parent.parent / 'infra' / 'docker' / '.env'
-load_dotenv(dotenv_path=env_path)
+# Convertimos la URL de DB para que use el driver asyncpg
+ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
 
-DATABASE_URL = os.getenv("BUILDS_DATABASE_URL")
-
-if not DATABASE_URL:
-    raise ValueError("No se encontró la variable de entorno BUILDS_DATABASE_URL")
-
+# 1. Usamos create_async_engine
 engine = create_async_engine(
-    DATABASE_URL,
-    future=True,
-    echo=False,
+    ASYNC_DATABASE_URL,
+    # echo=True # Descomenta para debugging de SQL
 )
 
+# 2. Usamos async_sessionmaker
 AsyncSessionLocal = async_sessionmaker(
-    engine,
-    expire_on_commit=False,
+    bind=engine,
     class_=AsyncSession,
-    autoflush=False,
+    expire_on_commit=False  # Requerido para async
 )
 
+# 3. Base sigue igual
 Base = declarative_base()
 
-async def get_db() -> AsyncSession:
+# 4. El generador de sesión ahora es asíncrono
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:
         yield session
-
-async def init_db():
-    import app.models
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)

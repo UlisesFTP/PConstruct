@@ -1,136 +1,136 @@
-from fastapi import APIRouter, HTTPException, Header, Request
-from fastapi.responses import JSONResponse
-from typing import Dict, Any, Optional, List
-import httpx
-from app.config import SERVICE_CONFIG, logger
-from app.utils.security import extract_user_id_from_authorization, verify_token
+from fastapi import APIRouter, Request, HTTPException, status, Header
+from typing import Optional, Dict
 
-router = APIRouter(prefix="/builds", tags=["builds"])
+# Importamos tu forwarder y tu validador de token
+from app.utils.http_forward import forward_request
+from app.utils.security import verify_token
+from app.config import SERVICE_CONFIG
 
-@router.post("", status_code=201)
-async def create_build_proxy(
+router = APIRouter(prefix="/api/v1/builds", tags=["Builds"])
+
+BUILD_SERVICE_URL = SERVICE_CONFIG.get("build")
+
+if not BUILD_SERVICE_URL:
+    raise RuntimeError("BUILD_SERVICE_URL no está configurado en SERVICE_CONFIG")
+
+# --- ¡FUNCIÓN ELIMINADA! ---
+# Ya no usamos _get_auth_headers, usaremos verify_token
+
+# --- Endpoints de Builds (Corregidos) ---
+
+@router.post("/", status_code=status.HTTP_201_CREATED)
+async def create_build(
     request: Request,
-    authorization: str | None = Header(None),
+    authorization: str | None = Header(None) # <-- ¡Como en tu posts_router!
 ):
-    user_id = extract_user_id_from_authorization(authorization)
-    body = await request.json()
+    """
+    Crea una nueva build. (Ruta protegida)
+    """
+    # 1. Validar token y obtener datos del usuario
+    token_data: Dict = verify_token(authorization)
+    user_id = token_data.get("sub")
+    username = token_data.get("username")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Token inválido, falta 'sub' (user_id)")
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            f"{SERVICE_CONFIG['build']}/builds/",
-            json=body,
-            headers={"X-User-Id": str(user_id)},
-            timeout=10.0,
-        )
+    # 2. Preparar headers para el microservicio
+    auth_headers = {
+        "X-User-ID": str(user_id),
+        "X-User-Name": str(username)
+    }
 
-    return JSONResponse(
-        status_code=resp.status_code,
-        content=resp.json(),
+    # 3. Reenviar
+    return await forward_request(
+        request=request,
+        target_url=f"{BUILD_SERVICE_URL}/api/v1/builds/",
+        custom_headers=auth_headers
     )
 
-@router.get("/community")
-async def get_community_builds_proxy(
-    skip: int = 0,
-    limit: int = 20,
+@router.get("/my-builds")
+async def get_my_builds(
+    request: Request,
+    authorization: str | None = Header(None) # <-- ¡Como en tu posts_router!
 ):
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            f"{SERVICE_CONFIG['build']}/builds/community",
-            params={"skip": skip, "limit": limit},
-            timeout=10.0,
-        )
-    return JSONResponse(
-        status_code=resp.status_code,
-        content=resp.json(),
+    """
+    Obtiene las builds del usuario autenticado. (Ruta protegida)
+    """
+    # 1. Validar token y obtener user_id
+    token_data: Dict = verify_token(authorization)
+    user_id = token_data.get("sub")
+    username = token_data.get("username") # <-- Lo pide el builds-service
+    if not user_id or not username:
+        raise HTTPException(status_code=401, detail="Token inválido")
+
+    # 2. Preparar headers
+    user_headers = {
+        "X-User-ID": str(user_id),
+        "X-User-Name": str(username) # <-- Header que faltaba
+    }
+
+    # 3. Reenviar
+    return await forward_request(
+        request=request,
+        target_url=f"{BUILD_SERVICE_URL}/api/v1/builds/my-builds",
+        custom_headers=user_headers
+    )
+
+@router.delete("/{build_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_build(
+    build_id: str, 
+    request: Request,
+    authorization: str | None = Header(None) # <-- ¡Como en tu posts_router!
+):
+    """
+    Elimina una build (si eres el propietario). (Ruta protegida)
+    """
+    # 1. Validar token
+    token_data: Dict = verify_token(authorization)
+    user_id = token_data.get("sub")
+    username = token_data.get("username")
+    if not user_id or not username:
+        raise HTTPException(status_code=401, detail="Token inválido")
+
+    # 2. Preparar headers
+    user_headers = {
+        "X-User-ID": str(user_id),
+        "X-User-Name": str(username)
+    }
+
+    # 3. Reenviar
+    return await forward_request(
+        request=request,
+        target_url=f"{BUILD_SERVICE_URL}/api/v1/builds/{build_id}",
+        custom_headers=user_headers
+    )
+
+# --- RUTAS PÚBLICAS (Sin cambios) ---
+
+@router.get("/community")
+async def get_community_builds(request: Request):
+    """
+    Obtiene las builds públicas de la comunidad. (Ruta pública)
+    """
+    return await forward_request(
+        request=request,
+        target_url=f"{BUILD_SERVICE_URL}/api/v1/builds/community"
     )
 
 @router.get("/{build_id}")
-async def get_build_detail_proxy(
-    build_id: int,
-    authorization: str | None = Header(None),
-):
-    headers = {}
-    if authorization:
-        try:
-            uid = extract_user_id_from_authorization(authorization)
-            headers["X-User-Id"] = str(uid)
-        except HTTPException:
-            # token inválido -> el microservicio igual permitirá si es pública
-            pass
-
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            f"{SERVICE_CONFIG['build']}/builds/{build_id}",
-            headers=headers,
-            timeout=10.0,
-        )
-
-    return JSONResponse(
-        status_code=resp.status_code,
-        content=resp.json() if resp.content else None,
+async def get_build_detail(build_id: str, request: Request):
+    """
+    Obtiene el detalle de una build específica. (Ruta pública)
+    """
+    return await forward_request(
+        request=request,
+        target_url=f"{BUILD_SERVICE_URL}/api/v1/builds/{build_id}"
     )
 
-@router.get("/mine")
-async def get_my_builds_proxy(
-    authorization: str | None = Header(None),
-):
-    user_id = extract_user_id_from_authorization(authorization)
-
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            f"{SERVICE_CONFIG['build']}/builds/mine",
-            headers={"X-User-Id": str(user_id)},
-            timeout=10.0,
-        )
-
-    return JSONResponse(
-        status_code=resp.status_code,
-        content=resp.json(),
+@router.post("/check-compatibility")
+async def check_compatibility(request: Request):
+    """
+    Verifica la compatibilidad de un conjunto de componentes. (Ruta pública)
+    """
+    return await forward_request(
+        request=request,
+        target_url=f"{BUILD_SERVICE_URL}/api/v1/builds/check-compatibility"
     )
-
-@router.post("/recommend")
-async def recommend_build(
-    requirements: Dict[str, Any],
-    authorization: str | None = Header(None),
-):
-    headers = {}
-    if authorization:
-        token_data = verify_token(authorization)
-        if token_data:
-            headers["X-User-ID"] = token_data["sub"]
-
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(
-                f"{SERVICE_CONFIG['build']}/builds/recommend",
-                json=requirements,
-                headers=headers,
-                timeout=30.0
-            )
-            return JSONResponse(status_code=response.status_code, content=response.json())
-        except Exception as e:
-            logger.error(f"Build recommendation error: {str(e)}")
-            raise HTTPException(
-                status_code=503,
-                detail="Build service unavailable"
-            )
-
-@router.get("/saved")
-async def get_saved_builds(
-    authorization: str | None = Header(None),
-):
-    token_data = verify_token(authorization)
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.get(
-                f"{SERVICE_CONFIG['build']}/builds/user/{token_data['sub']}",
-                headers={"X-User-ID": token_data["sub"]},
-                timeout=30.0
-            )
-            return JSONResponse(status_code=response.status_code, content=response.json())
-        except Exception as e:
-            logger.error(f"Get saved builds error: {str(e)}")
-            raise HTTPException(
-                status_code=503,
-                detail="Build service unavailable"
-            )

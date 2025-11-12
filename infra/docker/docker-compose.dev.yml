@@ -162,24 +162,59 @@ services:
 
 
 
-
+#Servicio de Builds
   build-service:
-    build:
-      context: ../../services/builds
-      dockerfile: Dockerfile
-    image: build-service-dev
-    container_name: build-service-container
+      build:
+        context: ../../services/builds # Apunta a la carpeta que creamos
+        dockerfile: Dockerfile
+      image: build-service-dev
+      container_name: build-service-container
+      
+      # Lee las variables del archivo .env
+      env_file:
+        - ./.env
+        
+      # Pasa la variable de la base de datos al contenedor
+      environment:
+        - BUILDS_DATABASE_URL=${BUILDS_DATABASE_URL} # Usará el driver asyncpg gracias a nuestro código
+      
+      expose:
+        - "8004" # El puerto interno que definimos (y que el gateway espera)
+        
+      networks:
+        - pcbuilder_net
+        
+      depends_on:
+        - builds-db  # Depende de su propia DB
+
+
+
+  builds-db:
+    image: postgres:15-alpine
+    container_name: builds-db-container
+    
+    # Lee las variables del .env
     env_file:
       - ./.env
+      
+    # Configura la DB (PostgreSQL usará estas variables)
     environment:
-      - BUILDS_DATABASE_URL=${BUILDS_DATABASE_URL}
-      - COMPONENT_SERVICE_URL=${COMPONENT_SERVICE_URL}
-      - RABBITMQ_URL=${RABBITMQ_URL}
-    expose:
-      - "8004"
+      - POSTGRES_USER=${BUILDS_DB_USER}
+      - POSTGRES_PASSWORD=${BUILDS_DB_PASSWORD}
+      - POSTGRES_DB=${BUILDS_DB_NAME}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=gemini-2.5-flash
+      
+    ports:
+      - "5435:5432" # Mapea al puerto 5435 para evitar conflictos (components usa 5434)
+      
+    volumes:
+      - builds_postgres_data:/var/lib/postgresql/data
+      
     networks:
       - pcbuilder_net
- 
+
+
 
 
 
@@ -268,4 +303,6 @@ volumes:
   rabbitmq_data: 
     driver: local # (Opcional, 'local' es el default)
   components_postgres_data:
+    driver: local
+  builds_postgres_data:    # <--- AÑADE ESTA LÍNEA
     driver: local

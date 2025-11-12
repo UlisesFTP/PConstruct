@@ -1,48 +1,74 @@
+# api_gateway/app/utils/http_forward.py
 import httpx
-from fastapi import HTTPException, status
-from typing import Any, Dict, Optional
+from fastapi import Request, HTTPException, status
+from fastapi.responses import JSONResponse, Response
 import json
-from app.config import logger
+from app.config import logger # Asegúrate de que tu config.py tenga 'logger'
 
-async def forward_get(url: str, headers: Dict[str, str] | None = None,
-                      params: Dict[str, Any] | None = None):
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            resp = await client.get(url, headers=headers, params=params)
-            resp.raise_for_status()
-            return resp
-        except httpx.HTTPStatusError as e:
-            # Propaga el status code y el json de error real del microservicio
-            try:
-                detail = e.response.json()
-            except json.JSONDecodeError:
-                detail = e.response.text
-            raise HTTPException(status_code=e.response.status_code, detail=detail)
-        except Exception as e:
-            logger.error(f"forward_get error: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Downstream service unavailable",
-            )
+async def forward_request(
+    request: Request, 
+    target_url: str, 
+    custom_headers: dict = {}
+):
+    """
+    Reenvía una petición de FastAPI a otro microservicio.
+    """
+    # Obtenemos el cliente httpx global desde el estado de la app
+    # (Tu main.py lo crea como app.state.http)
+    http_client = request.app.state.http 
+    
+    url = httpx.URL(
+        url=target_url, 
+        query=request.url.query.encode("utf-8")
+    )
+    
+    # Prepara los headers
+    headers = {
+        key: value for key, value in request.headers.items() 
+        if key.lower() not in ('host', 'content-length', 'transfer-encoding', 'connection')
+    }
+    headers.update(custom_headers) # Añade nuestros headers (ej. X-User-ID)
 
-async def forward_post_json(url: str,
-                            body: Dict[str, Any],
-                            headers: Dict[str, str] | None = None,
-                            timeout: float = 30.0):
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        try:
-            resp = await client.post(url, json=body, headers=headers)
-            resp.raise_for_status()
-            return resp
-        except httpx.HTTPStatusError as e:
-            try:
-                detail = e.response.json()
-            except json.JSONDecodeError:
-                detail = e.response.text
-            raise HTTPException(status_code=e.response.status_code, detail=detail)
-        except Exception as e:
-            logger.error(f"forward_post_json error: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Downstream service unavailable",
-            )
+    # Prepara el contenido (body)
+    try:
+        body_bytes = await request.body()
+    except Exception:
+        body_bytes = None
+
+    try:
+        # Intenta hacer la petición al microservicio
+        response = await http_client.request(
+            method=request.method,
+            url=url,
+            headers=headers,
+            content=body_bytes,
+            timeout=10.0  # Timeout de 10 segundos
+        )
+
+        # Devuelve la respuesta del microservicio tal cual
+        return Response(
+            content=response.content,
+            status_code=response.status_code,
+            media_type=response.headers.get("content-type")
+        )
+
+    except httpx.ConnectError as e:
+        # Error si el microservicio está caído
+        logger.error(f"Error de conexión con el servicio: {target_url} - {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Error de conexión con el servicio: {target_url}"
+        )
+    except httpx.ReadTimeout as e:
+        # Error si el microservicio tarda demasiado
+        logger.error(f"Timeout con el servicio: {target_url} - {e}")
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=f"El servicio tardó demasiado en responder: {target_url}"
+        )
+    except Exception as e:
+        logger.error(f"Error interno del Gateway: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"error": True, "message": f"Error interno del Gateway: {str(e)}"}
+        )

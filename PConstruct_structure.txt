@@ -1,0 +1,207 @@
+PConstruct/
+├───Front/
+│   └───my_app/
+│       └───lib/
+│           ├───main.dart
+│           ├───app/
+│           │   ├───models/
+│           │   │   ├───build.dart
+│           │   │   ├───component.dart
+│           │   │   ├───post.dart
+│           │   │   └───user.dart
+│           │   ├───routes/
+│           │   │   ├───app_router.dart
+│           │   │   └───app_routes.dart
+│           │   ├───services/
+│           │   │   ├───auth_service.dart
+│           │   │   ├───build_service.dart
+│           │   │   ├───component_service.dart
+│           │   │   ├───post_service.dart
+│           │   │   └───user_service.dart
+│           │   └───widgets/
+│           │       ├───build_card.dart
+│           │       ├───component_card.dart
+│           │       ├───custom_app_bar.dart
+│           │       ├───post_card.dart
+│           │       └───user_avatar.dart
+│           ├───core/
+│           │   ├───constants/
+│           │   │   ├───api_constants.dart
+│           │   │   └───app_constants.dart
+│           │   ├───errors/
+│           │   │   ├───exceptions.dart
+│           │   │   └───failures.dart
+│           │   ├───network/
+│           │   │   └───api_client.dart
+│           │   └───usecases/
+│           │       └───usecase.dart
+│           ├───features/
+│           │   ├───auth/
+│           │   │   ├───presentation/
+│           │   │   │   ├───bloc/
+│           │   │   │   │   ├───auth_bloc.dart
+│           │   │   │   │   ├───auth_event.dart
+│           │   │   │   │   └───auth_state.dart
+│           │   │   │   └───pages/
+│           │   │   │       ├───login_page.dart
+│           │   │   │       └───register_page.dart
+│           │   │   └───data/
+│           │   │       ├───datasources/
+│           │   │       │   └───auth_remote_data_source.dart
+│           │   │       └───repositories/
+│           │   │           └───auth_repository_impl.dart
+│           │   ├───builds/
+│           │   │   └───presentation/
+│           │   │       ├───bloc/
+│           │   │       │   ├───build_bloc.dart
+│           │   │       │   ├───build_event.dart
+│           │   │       │   └───build_state.dart
+│           │   │       └───pages/
+│           │   │           ├───build_detail_page.dart
+│           │   │           └───build_list_page.dart
+│           │   ├───components/
+│           │   │   └───presentation/
+│           │   │       ├───bloc/
+│           │   │       │   ├───component_bloc.dart
+│           │   │       │   ├───component_event.dart
+│           │   │       │   └───component_state.dart
+│           │   │       └───pages/
+│           │   │           ├───component_detail_page.dart
+│           │   │           └───component_list_page.dart
+│           │   ├───posts/
+│           │   │   └───presentation/
+│           │   │       ├───bloc/
+│           │   │       │   ├───post_bloc.dart
+│           │   │       │   ├───post_event.dart
+│           │   │       │   └───post_state.dart
+│           │   │       └───pages/
+│           │   │           ├───post_detail_page.dart
+│           │   │           └───post_list_page.dart
+│           │   └───user/
+│           │       └───presentation/
+│           │           ├───bloc/
+│           │           │   ├───user_bloc.dart
+│           │           │   ├───user_event.dart
+│           │           │   └───user_state.dart
+│           │           └───pages/
+│           │               ├───profile_page.dart
+│           │               └───user_list_page.dart
+│           ├───landing/
+│           │   └───pages/
+│           │       └───landing_page.dart
+│           ├───models/
+│           │   ├───build.dart
+│           │   ├───component.dart
+│           │   ├───post.dart
+│           │   └───user.dart
+│           └───providers/
+│               ├───auth_provider.dart
+│               ├───build_provider.dart
+│               ├───component_provider.dart
+│               ├───post_provider.dart
+│               └───user_provider.dart
+├───infra/
+│   └───docker/
+│       ├───docker-compose.dev.yml
+│       └───code/
+│           └───data/
+├───api_gateway/
+│   ├───Dockerfile
+│   ├───jwt_utils.py
+│   ├───requirements.txt
+│   └───app/
+│       ├───__init__.py
+│       ├───config.py
+│       ├───main.py
+│       ├───routers/
+│       │   ├───__init__.py
+│       │   ├───auth_router.py
+│       │   ├───benchmark_router.py
+│       │   ├───builds_router.py(NECESITA UN ROUTER)
+│       │   ├───catalog_router.py
+│       │   ├───components_router.py
+│       │   ├───health_router.py
+│       │   ├───posts_router.py
+│       │   ├───search_router.py
+│       │   └───users_router.py
+│       ├───schemas/
+│       │   ├───__init__.py
+│       │   ├───auth.py
+│       │   └───builds.py
+│       └───utils/
+│           ├───__init__.py
+│           ├───http_forward.py
+│           └───security.py
+└───services/
+    ├───benchmark/
+    │   ├───Dockerfile
+    │   ├───kaggle.json
+    │   ├───requirements.txt
+    │   └───app/
+    │       ├───config.py
+    │       ├───crud.py
+    │       ├───database.py
+    │       ├───estimator.py
+    │       ├───gemini_client.py
+    │       ├───main.py
+    │       ├───models.py
+    │       ├───schemas.py
+    │       └───score_loader.py
+    ├───builds/(VAMOS A CREAR Y ADAPTAR EL MICROSERVIOS)
+  
+    ├───components/
+    │   ├───Dockerfile
+    │   ├───requirements.txt
+    │   ├───run_scraper.py
+    │   └───app/
+    │       ├───__init__.py
+    │       ├───main.py
+    │       ├───api/
+    │       │   ├───__init__.py
+    │       │   ├───v1/
+    │       │   │   ├───__init__.py
+    │       │   │   ├───endpoints/
+    │       │   │   │   ├───__init__.py
+    │       │   │   │   ├───components.py
+    │       │   │   │   └───search.py
+    │       │   │   └───api.py
+    │       ├───core/
+    │       │   ├───__init__.py
+    │       │   └───config.py
+    │       ├───crud/
+    │       │   ├───__init__.py
+    │       │   └───component.py
+    │       ├───db/
+    │       │   ├───__init__.py
+    │       │   └───session.py
+    │       ├───models/
+    │       │   ├───__init__.py
+    │       │   └───component.py
+    │       ├───schemas/
+    │       │   ├───__init__.py
+    │       │   └───component.py
+    │       └───services/
+    │           ├───__init__.py
+    │           └───scraper.py
+    ├───posts/
+    │   ├───Dockerfile
+    │   ├───requirements.txt
+    │   └───app/
+    │       ├───__init__.py
+    │       ├───main.py
+    │       ├───config.py
+    │       ├───crud.py
+    │       ├───database.py
+    │       ├───models.py
+    │       └───schemas.py
+    └───users/
+        ├───Dockerfile
+        ├───requirements.txt
+        └───app/
+            ├───__init__.py
+            ├───main.py
+            ├───config.py
+            ├───crud.py
+            ├───database.py
+            ├───models.py
+            └───schemas.py
