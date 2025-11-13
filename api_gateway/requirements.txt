@@ -9,3 +9,4 @@ passlib[bcrypt]
 cloudinary
 pydantic>=2.0
 redis[hiredis]
+websockets

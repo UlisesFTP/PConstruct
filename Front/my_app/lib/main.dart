@@ -20,40 +20,82 @@ import 'package:my_app/features/benchmarks/pages/benchmarks_page.dart';
 import 'package:my_app/landing/pages/landing_page.dart';
 import 'package:my_app/providers/auth_provider.dart';
 import 'package:provider/provider.dart';
-// ¡YA NO IMPORTAMOS EL MODELO MOCK AQUÍ!
-// import 'package:my_app/models/component.dart';
+import 'package:url_strategy/url_strategy.dart';
 
-void main() {
-  runApp(
-    MultiProvider(
+Future<void> main() async {
+  // Asegura que Flutter esté inicializado
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Quita el # de las URLs en web
+  setPathUrlStrategy();
+
+  runApp(const PConstructApp());
+}
+
+class PConstructApp extends StatelessWidget {
+  const PConstructApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    // Configura los Providers
+    return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ProxyProvider<AuthProvider, ApiClient>(
-          update: (context, authProvider, previousApiClient) =>
-              ApiClient(authProvider: authProvider),
+          update: (context, auth, previousApiClient) =>
+              ApiClient(authProvider: auth),
         ),
       ],
-      child: const MyApp(),
-    ),
-  );
+      child: const MyApp(), // Llama al widget principal de la app
+    );
+  }
 }
 
+// Este es tu widget principal
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'PC Builder',
-      debugShowCheckedModeBanner: false,
+      title: 'PConstruct',
       theme: AppTheme.darkTheme,
-      initialRoute: '/',
+      debugShowCheckedModeBanner: false,
+
+      // --- AQUÍ ESTÁ LA MAGIA ---
+      // Usamos un Consumer para reaccionar a los cambios de AuthProvider
+      home: Consumer<AuthProvider>(
+        builder: (context, auth, child) {
+          // 1. Si auth.isLoading es true, estamos comprobando el token.
+          // Muestra una pantalla de carga (Splash Screen).
+          if (auth.isLoading) {
+            return const Scaffold(
+              backgroundColor: Color(0xFF0F0F0F), // Tu color de fondo
+              body: Center(
+                child: CircularProgressIndicator(
+                  color: Color.fromARGB(255, 197, 0, 72),
+                ),
+              ),
+            );
+          }
+
+          // 2. Si terminamos de cargar (isLoading = false) y
+          // NO está autenticado, muestra la LandingPage.
+          if (!auth.isAuthenticated) {
+            return const LandingPage();
+          }
+
+          // 3. Si terminamos de cargar y SÍ está autenticado,
+          // muestra el Feed (MainLayout).
+          return const MainLayout(child: FeedPage());
+        },
+      ),
+      // --- FIN DE LA CORRECCIÓN ---
+
+      // Tus rutas están bien, pero 'home' ahora maneja el inicio
       routes: {
-        '/': (context) => const LandingPage(),
         '/login': (context) => const LoginPage(),
         '/register': (context) => const RegistroPage(),
-        '/verification': (context) => const EmailVerificationPage(),
-        '/recovery': (context) => const PasswordRecoveryPage(),
         '/feed': (context) => const MainLayout(child: FeedPage()),
         '/profile': (context) => const MainLayout(child: ProfilePage()),
         '/my-posts': (context) => const MainLayout(child: MyPostsPage()),
@@ -64,9 +106,6 @@ class MyApp extends StatelessWidget {
             MainLayout(child: BuildConstructorPage()),
         '/benchmarks': (context) => const MainLayout(child: BenchmarksPage()),
         '/components': (context) => const MainLayout(child: ComponentsPage()),
-
-        // --- ¡RUTA CORREGIDA! ---
-        // Ahora espera un 'int' (el ID) en lugar de un objeto 'Component'
         '/component-detail': (context) {
           final componentId =
               ModalRoute.of(context)?.settings.arguments as int?;
@@ -78,12 +117,10 @@ class MyApp extends StatelessWidget {
               ),
             );
           }
-          // Pasa el ID a la página de detalle
           return MainLayout(
             child: ComponentDetailPage(componentId: componentId),
           );
         },
-        // --- FIN DE LA CORRECCIÓN ---
       },
       onUnknownRoute: (settings) {
         return MaterialPageRoute(

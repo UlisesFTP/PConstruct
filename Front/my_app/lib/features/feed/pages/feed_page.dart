@@ -12,6 +12,9 @@ import 'package:youtube_player_iframe/youtube_player_iframe.dart'
     as iframe_player;
 import 'package:youtube_player_flutter/youtube_player_flutter.dart'
     as mobile_player;
+import 'package:web_socket_channel/web_socket_channel.dart';
+import 'dart:convert';
+import 'package:visibility_detector/visibility_detector.dart';
 
 class FeedPage extends StatefulWidget {
   const FeedPage({super.key});
@@ -26,28 +29,103 @@ class _FeedPageState extends State<FeedPage> {
 
   final ScrollController _scrollController = ScrollController();
 
+  // NUEVO: Variable para el canal de WebSocket
+  WebSocketChannel? _channel;
+
+  // NUEVO: URL del WebSocket (basada en tu ApiClient)
+  // Asegúrate de que 'localhost' sea accesible desde tu emulador/dispositivo.
+  // Si usas el emulador de Android, usa '10.0.2.2' en lugar de 'localhost'.
+  final String _webSocketUrl = 'ws://localhost:8000/posts/ws/feed';
+  // final String _webSocketUrl = 'ws://10.0.2.2:8000/posts/ws/feed'; // <-- Descomenta si usas emulador Android
+
+  DateTime? _lastLoadTime; // Para el temporizador de 8-10 min
+  bool _showNewPostsButton = false; // Para el botón "Nuevos Posts"
+
   @override
   void initState() {
     super.initState();
     final apiClient = Provider.of<ApiClient>(context, listen: false);
     _postsFuture = apiClient.getPosts();
+    _loadPosts();
+    // Nos conectamos al feed en tiempo real
+    _connectWebSocket();
+
     print("FeedPage initState: Cargando posts...");
   }
 
-  @override
-  void dispose() {
-    _scrollController.dispose(); // Dispose the controller
-    // _debounce?.cancel(); // Dispose moved to MainLayout
-    super.dispose();
-  }
-
-  // --- Core Feed Logic ---
-  Future<void> _refreshPosts() async {
+  // NUEVO: Método separado para cargar posts (para poder re-usarlo)
+  void _loadPosts() {
+    print("FeedPage: Cargando posts vía HTTP...");
     final apiClient = Provider.of<ApiClient>(context, listen: false);
-    // Trigger FutureBuilder rebuild
+    // Asignamos el futuro al estado para que el FutureBuilder reaccione
     setState(() {
       _postsFuture = apiClient.getPosts();
+      _lastLoadTime = DateTime.now(); // Actualiza el temporizador
+      _showNewPostsButton = false; // Oculta el botón al recargar
     });
+  }
+
+  // NUEVO: Comprueba si el feed está "rancio" (más de 9 min)
+  void _checkRefreshTimer() {
+    if (_lastLoadTime == null) return; // Aún no ha cargado
+
+    final now = DateTime.now();
+    final difference = now.difference(_lastLoadTime!);
+
+    // Si han pasado más de 9 minutos, recarga.
+    if (difference.inMinutes >= 9) {
+      print("FeedPage: Datos rancios (>= 9 min) detectados, recargando...");
+      _loadPosts();
+    }
+  }
+
+  // NUEVO: Método para iniciar y escuchar el WebSocket
+  void _connectWebSocket() {
+    try {
+      print("FeedPage: Conectando a WebSocket en $_webSocketUrl");
+      // 1. Conectamos al canal
+      _channel = WebSocketChannel.connect(Uri.parse(_webSocketUrl));
+
+      // 2. Escuchamos mensajes del servidor
+      _channel!.stream.listen(
+        (message) {
+          print('WebSocket message received: $message');
+          // Decodificamos el mensaje JSON
+          final data = jsonDecode(message);
+
+          // --- LÓGICA DE WEBSOCKET MODIFICADA ---
+          // Ya no recargamos por "like", solo por "new_post"
+          if (data['event'] == 'new_post') {
+            print("FeedPage: Notificación de nuevo post recibida.");
+            // Mostramos el botón en lugar de recargar
+            setState(() {
+              _showNewPostsButton = true;
+            });
+          }
+          // (Los 'post_update' de likes/comments ya no se envían)
+          // --- FIN DE LA MODIFICACIÓN ---
+        },
+        onDone: () {
+          print('WebSocket channel cerrado (onDone)');
+          // Opcional: intentar reconectar
+        },
+        onError: (error) {
+          print('WebSocket error: $error');
+          // Opcional: manejar errores de conexión
+        },
+      );
+    } catch (e) {
+      print("Error al conectar al WebSocket: $e");
+    }
+  }
+
+  // NUEVO: Limpiamos la conexión al salir de la página
+  @override
+  void dispose() {
+    // Cerramos la conexión del WebSocket
+    _channel?.sink.close();
+    _scrollController.dispose();
+    super.dispose();
   }
 
   // --- Scrolling Logic (Placeholder - needs connection to MainLayout) ---
@@ -72,130 +150,141 @@ class _FeedPageState extends State<FeedPage> {
   // --- Build Method (Returns ONLY Feed Content + FAB) ---
   @override
   Widget build(BuildContext context) {
-    // isDesktop might still be useful for responsive padding inside the feed
-    final bool isDesktop = MediaQuery.of(context).size.width >= 768;
-
-    // Return a basic Scaffold mainly for the FloatingActionButton placement
-    return Scaffold(
-      backgroundColor:
-          Colors.transparent, // Background is handled by MainLayout
-      body: RefreshIndicator(
-        onRefresh: _refreshPosts,
-        color: Theme.of(context).primaryColor,
-        backgroundColor: const Color(
-          0xFF1A1A1C,
-        ), // Or inherit/set appropriately
-        child: FutureBuilder<List<Post>>(
-          future: _postsFuture,
-          builder: (context, snapshot) {
-            // --- Handle Loading State ---
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            // --- Handle Error State ---
-            if (snapshot.hasError) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Text(
-                    'Error al cargar las publicaciones: ${snapshot.error}',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey[400]),
-                  ),
-                ),
-              );
-            }
-
-            // --- Handle No Data or Empty State ---
-            if (!snapshot.hasData || snapshot.data!.isEmpty) {
-              return const Center(
-                child: Text(
-                  'Aún no hay publicaciones. ¡Sé el primero!',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              );
-            }
-
-            // --- Handle Data State (Build the List) ---
-            final posts = snapshot.data!;
-
-            // Regenerate keys after the frame builds if data changes
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                // Check if keys need update (e.g., if post list changed)
-                bool needsUpdate = false;
-                if (_postKeys.length != posts.length) {
-                  needsUpdate = true;
-                } else {
-                  for (var post in posts) {
-                    if (!_postKeys.containsKey(post.id)) {
-                      needsUpdate = true;
-                      break;
-                    }
-                  }
-                }
-                if (needsUpdate) {
-                  setState(() {
-                    _postKeys.clear();
-                    for (var post in posts) {
-                      _postKeys[post.id] = GlobalKey();
-                    }
-                  });
-                }
-              }
-            });
-
-            return ListView.builder(
-              controller: _scrollController,
-              padding: EdgeInsets.symmetric(
-                horizontal: isDesktop ? 32 : 24,
-                vertical: isDesktop ? 32 : 24,
+    // Usamos VisibilityDetector para saber cuándo el usuario VUELVE a esta página
+    return VisibilityDetector(
+      key: const Key('feed_page_visibility'),
+      onVisibilityChanged: (visibilityInfo) {
+        // Si la página se vuelve completamente visible
+        if (visibilityInfo.visibleFraction == 1.0) {
+          print("FeedPage: Página visible. Comprobando temporizador...");
+          _checkRefreshTimer(); // Comprueba si debe recargar
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        floatingActionButton: FloatingActionButton(
+          onPressed: () {
+            showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: const Color(0xFF1A1A1C),
+              builder: (modalContext) => CreatePostModal(
+                onPostCreated: () {
+                  // El WebSocket se encargará de mostrar el botón "Nuevos Posts".
+                  print("Post creado. El feed se actualizará.");
+                },
               ),
-              itemCount: posts.length,
-              itemBuilder: (context, index) {
-                final post = posts[index];
-                // Get the key, defaulting to null if not ready yet
-                final postKey = _postKeys[post.id];
-                return Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 672),
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 32.0),
-                      child: PostCard(
-                        // Assign the key to the PostCard
-                        key: postKey,
-                        post: post,
-                      ),
-                    ),
-                  ),
-                );
-              },
             );
           },
+          backgroundColor: const Color.fromARGB(
+            255,
+            197,
+            0,
+            66,
+          ), // Color de tu tema
+          child: const Icon(Icons.add, color: Colors.white),
         ),
-      ),
-      // --- Floating Action Button specific to the Feed ---
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            backgroundColor: const Color(0xFF1A1A1C),
-            builder: (modalContext) =>
-                CreatePostModal(onPostCreated: _refreshPosts),
-          );
-        },
-        backgroundColor: const Color(0xFFC7384D),
-        elevation: 8,
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text(
-          "Crear Publicación",
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
-          ),
+        body: FutureBuilder<List<Post>>(
+          future: _postsFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(
+                child: CircularProgressIndicator(
+                  color: Color.fromARGB(255, 197, 0, 69),
+                ),
+              );
+            }
+            if (snapshot.hasError) {
+              return Center(
+                child: Text(
+                  'Error al cargar los posts: ${snapshot.error}',
+                  style: const TextStyle(color: Colors.white),
+                ),
+              );
+            }
+            if (snapshot.hasData) {
+              final posts = snapshot.data!;
+              _postKeys.clear();
+              for (var post in posts) {
+                _postKeys[post.id] = GlobalKey();
+              }
+
+              return Stack(
+                children: [
+                  RefreshIndicator(
+                    onRefresh: () async {
+                      _loadPosts();
+                    },
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      itemCount: posts.length,
+                      itemBuilder: (context, index) {
+                        final post = posts[index];
+                        // Combina un ancho máximo (para web) con el padding (para móvil)
+                        return Center(
+                          child: Container(
+                            // Establece un ancho máximo para pantallas grandes (web/tablet)
+                            constraints: const BoxConstraints(maxWidth: 900),
+                            child: Padding(
+                              // Añade padding horizontal (a los lados) y vertical (entre posts)
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14.0, // <-- Márgenes en móvil
+                                vertical: 8.0,
+                              ),
+                              child: PostCard(
+                                key: _postKeys[post.id],
+                                post: post,
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+
+                  // --- EL BOTÓN DE "NUEVOS POSTS" ---
+                  if (_showNewPostsButton)
+                    Align(
+                      alignment: Alignment.topCenter,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 16.0),
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color.fromARGB(
+                              255,
+                              197,
+                              0,
+                              69,
+                            ),
+                            shape: const StadiumBorder(),
+                          ),
+                          onPressed: () {
+                            _loadPosts(); // Recarga al tocar el botón
+                            _scrollController.animateTo(
+                              0.0,
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeOut,
+                            );
+                          },
+                          child: const Text(
+                            'Nuevos Posts',
+                            style: TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ),
+                  // --- FIN DEL BOTÓN ---
+                ],
+              );
+              // --- FIN DEL Stack ---
+            }
+            // Fallback
+            return const Center(
+              child: CircularProgressIndicator(
+                color: Color.fromARGB(255, 197, 0, 66),
+              ),
+            );
+          },
         ),
       ),
     );

@@ -1,9 +1,10 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_, delete, desc, func # <-- LÍNEA CORREGIDA
 from sqlalchemy.orm import selectinload, contains_eager
+from sqlalchemy.sql.expression import extract
 from . import models, schemas
-from sqlalchemy import select, or_, delete
 from typing import Optional
+from datetime import datetime, timedelta
 
 # --- CRUD para Publicaciones (Posts) ---
 
@@ -16,21 +17,72 @@ async def create_post(db: AsyncSession, post: schemas.PostCreate, user_id: int):
     return db_post
 
 
-async def get_posts(db: AsyncSession, current_user_id: Optional[int] = None, skip: int = 0, limit: int = 20):
+async def get_posts(
+    db: AsyncSession, 
+    current_user_id: Optional[int] = None, 
+    sort_by: str = "recent", # Nuevo parámetro para ordenar
+    skip: int = 0, 
+    limit: int = 20
+):
     """
     Obtiene una lista de publicaciones para el feed, incluyendo si el 
-    usuario actual le ha dado like.
+    usuario actual le ha dado like, y con ordenamiento dinámico.
+    sort_by: "recent" (default) o "popular".
     """
+    
+    # Query base con carga eficiente de relaciones
     query = (
         select(models.Post)
-        .order_by(models.Post.created_at.desc())
-        .offset(skip)
-        .limit(limit)
         .options(
             selectinload(models.Post.comments), # Carga comentarios
-            selectinload(models.Post.likes)     # Carga TODOS los likes (necesario para el conteo)
+            selectinload(models.Post.likes)     # Carga TODOS los likes
         )
     )
+
+    if sort_by == "popular":
+        # --- Algoritmo de Ranking Ponderado (Hot Ranking) ---
+        # Usamos 'epoch' (segundos desde 1970) para calcular la antigüedad
+        age_in_seconds = func.greatest(1.0, extract('epoch', func.now() - models.Post.created_at))
+        age_in_hours = age_in_seconds / 3600.0
+        
+        # Subqueries para contar likes y comentarios eficientemente
+        like_count_sq = (
+            select(models.Like.post_id, func.count(models.Like.id).label("like_count"))
+            .group_by(models.Like.post_id)
+            .subquery()
+        )
+        comment_count_sq = (
+            select(models.Comment.post_id, func.count(models.Comment.id).label("comment_count"))
+            .group_by(models.Comment.post_id)
+            .subquery()
+        )
+        
+        # Unimos la query principal con los conteos
+        query = query.outerjoin(like_count_sq, models.Post.id == like_count_sq.c.post_id) \
+                   .outerjoin(comment_count_sq, models.Post.id == comment_count_sq.c.post_id)
+                   
+        likes = func.coalesce(like_count_sq.c.like_count, 0)
+        # Damos un poco más de peso a los comentarios
+        comments = func.coalesce(comment_count_sq.c.comment_count, 0) * 1.5 
+        
+        interaction_score = (likes + comments)
+        
+        # Fórmula "Hot": Puntuación / (Antigüedad + Offset)^Gravedad
+        # Offset (2) previene que posts muy nuevos dominen
+        # Gravedad (1.8) es un estándar común
+        score = interaction_score / func.pow((age_in_hours + 2), 1.8)
+        
+        # Opcional: solo rankear posts de los últimos 7 días
+        query = query.filter(models.Post.created_at >= (datetime.now() - timedelta(days=7)))
+        
+        query = query.order_by(desc(score))
+        # --- Fin del Algoritmo de Ranking ---
+
+    else: # "recent" o por defecto
+        query = query.order_by(models.Post.created_at.desc())
+
+    # Aplicar paginación
+    query = query.offset(skip).limit(limit)
 
     result = await db.execute(query)
     posts = result.scalars().unique().all()

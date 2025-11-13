@@ -35,7 +35,7 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
     'storage_primary': Icons.save,
     'storage_secondary': Icons.save_alt,
     'cooler': Icons.ac_unit,
-    'case': Icons.desktop_windows_outlined,
+    'gabinete': Icons.desktop_windows_outlined,
     'psu': Icons.power,
     'fans': Icons.wind_power,
     'os': Icons.computer,
@@ -52,7 +52,7 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
     'storage_primary': 'SSD', // Asumimos que primario es SSD
     'storage_secondary': 'HDD', // Asumimos que secundario es HDD
     'cooler': 'Cooling',
-    'case': 'Case',
+    'gabinete': 'Gabinete',
     'psu': 'PSU',
     'fans': 'Ventiladores',
     // 'os': 'OS', // Tu API de componentes probablemente no tenga "OS"
@@ -67,7 +67,7 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
     'storage_primary': 'Storage Primary (SSD)',
     'storage_secondary': 'Storage Secondary (HDD)',
     'cooler': 'Cooler',
-    'case': 'Case',
+    'gabinete': 'Gabinete',
     'psu': 'Psu',
     'fans': 'Fans',
     // 'os': 'Os',

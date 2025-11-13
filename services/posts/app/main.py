@@ -1,13 +1,45 @@
 import os
 import httpx
-from fastapi import FastAPI, Depends, HTTPException, Header, status
+import json
+from fastapi import (
+    FastAPI, Depends, HTTPException, Header, status,
+    WebSocket, WebSocketDisconnect
+)
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional
+from typing import List, Optional, Set
 
 from . import crud, models, schemas
 from .database import engine, get_db
+import asyncio
 
 app = FastAPI(title="Posts Service")
+
+# --- Gestor de Conexiones WebSocket ---
+class ConnectionManager:
+    def __init__(self):
+        # Mantiene un seguimiento de las conexiones activas
+        self.active_connections: Set[WebSocket] = set()
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.add(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: str):
+        """Envía un mensaje a todas las conexiones activas."""
+        for connection in self.active_connections:
+            try:
+                await connection.send_text(message)
+            except Exception as e:
+                # Opcional: manejar conexiones rotas
+                print(f"Error sending message: {e}")
+                # self.disconnect(connection) # Puede ser necesario
+
+manager = ConnectionManager()
+# --- Fin del Gestor de Conexiones ---
+
 
 # Al arrancar la aplicación, crea las tablas en la base de datos si no existen.
 @app.on_event("startup")
@@ -28,21 +60,49 @@ async def health_check():
     return {"status": "healthy", "service": "posts"}
 
 
+# --- Endpoint de WebSocket ---
+@app.websocket("/ws/feed")
+async def websocket_feed(websocket: WebSocket):
+    """
+    Endpoint de WebSocket para el feed. Solo recibe notificaciones.
+    """
+    await manager.connect(websocket)
+    try:
+        # Mantenemos la conexión viva indefinidamente.
+        # El 'manager' usará esta 'websocket' para ENVIAR datos.
+        # Ya no necesitamos 'recibir' nada.
+        while True:
+            await asyncio.sleep(3600) # Simplemente dormimos
+    except (WebSocketDisconnect, asyncio.CancelledError):
+        # Esta excepción se lanza cuando el cliente (el gateway) se desconecta
+        manager.disconnect(websocket)
+    except Exception as e:
+        print(f"Error en WebSocket (service): {e}")
+        manager.disconnect(websocket)
+# --- Fin del Endpoint de WebSocket ---
+
 
 @app.get("/posts/", response_model=List[schemas.Post])
 async def read_posts(
     skip: int = 0, 
     limit: int = 20, 
+    sort_by: Optional[str] = "recent", # Añadido parámetro de orden
     db: AsyncSession = Depends(get_db),
     # Hacemos que el user_id sea opcional
     user_id: Optional[int] = Depends(get_current_user_id) if True else None # Truco para hacerlo opcional
 ):
     """
     Obtiene posts y enriquece datos del autor. 
-    Ahora también calcula si el usuario actual dio like.
+    Ahora también calcula si el usuario actual dio like y permite ordenar.
     """
-    # Pasamos el user_id (puede ser None si no está autenticado)
-    posts_data = await crud.get_posts(db, current_user_id=user_id, skip=skip, limit=limit)
+    # Pasamos el user_id y el sort_by a la función crud
+    posts_data = await crud.get_posts(
+        db, 
+        current_user_id=user_id, 
+        sort_by=sort_by, # Pasar el parámetro
+        skip=skip, 
+        limit=limit
+    )
     
     # --- El enriquecimiento de datos del autor se aplica a la lista devuelta por crud.get_posts ---
     user_ids = {post.user_id for post in posts_data}
@@ -79,6 +139,14 @@ async def create_post(
     """Endpoint para crear una nueva publicación."""
     created_post = await crud.create_post(db=db, post=post, user_id=user_id)
     
+    # --- DISPARADOR WEBSOCKET ---
+    # Notifica a todos los clientes que hay un nuevo post.
+    await manager.broadcast(json.dumps({
+            "event": "new_post", 
+            "post_id": created_post.id
+        }))
+    # --- Fin Disparador ---
+    
     # Construimos manualmente la respuesta para evitar el lazy-loading
     return schemas.Post(
         id=created_post.id,
@@ -88,7 +156,8 @@ async def create_post(
         image_url=created_post.image_url,
         created_at=created_post.created_at,
         comments=[],  # Un post nuevo siempre tiene 0 comentarios
-        likes_count=0   # Un post nuevo siempre tiene 0 likes
+        likes_count=0,   # Un post nuevo siempre tiene 0 likes
+        is_liked_by_user=False
     )
     
     
@@ -120,9 +189,7 @@ async def like_post(
     """
     like = await crud.add_like_to_post(db=db, post_id=post_id, user_id=user_id)
     
-    # Si el like ya existía, crud.add_like_to_post devuelve None
-    # Por ahora, no implementamos "unlike", simplemente no hacemos nada si ya existe.
-    # Devolvemos 204 No Content para indicar éxito sin cuerpo de respuesta.
+
     return
 
 
@@ -134,10 +201,8 @@ async def unlike_post(
 ):
     """Elimina un like de un usuario a una publicación."""
     deleted = await crud.remove_like_from_post(db=db, post_id=post_id, user_id=user_id)
-    if not deleted:
-        # Opcional: Si el like no existía, podrías devolver un 404,
-        # pero devolver 204 (éxito sin contenido) simplifica el frontend.
-        pass 
+
+        # --- Fin Disparador ---
     return
 
 
@@ -150,12 +215,30 @@ async def create_new_comment(
     user_id: int = Depends(get_current_user_id)
 ):
     """Crea un nuevo comentario en una publicación."""
-    return await crud.create_comment(
+    new_comment = await crud.create_comment(
         db=db, 
         comment=comment, 
         post_id=post_id, 
         user_id=user_id
     )
+    # --- Fin Disparador ---
+    
+    # Enriquecemos el comentario devuelto con el nombre del autor
+    # (Aunque el broadcast ya se envió, la respuesta HTTP debe ser completa)
+    comment_data = schemas.Comment.model_validate(new_comment)
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{USER_SERVICE_URL}/users/profiles", 
+                params={"user_ids": [user_id]}
+            )
+            response.raise_for_status()
+            author_info = response.json()[0]
+            comment_data.author_username = author_info.get("username")
+    except Exception as e:
+        print(f"Could not fetch user profile for new comment: {e}")
+        
+    return comment_data
 
 
 @app.get("/posts/{post_id}/comments", response_model=List[schemas.Comment])
