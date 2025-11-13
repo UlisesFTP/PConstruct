@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 import uuid
 from contextlib import asynccontextmanager
+from pydantic import BaseModel
 
 from . import crud, models, schemas
 from .database import engine, get_db, Base
@@ -87,3 +88,23 @@ async def check_build_compatibility(
     
     # Devuelve la respuesta JSON de Gemini (ej. {"compatible": false, "reason": "..."})
     return result
+
+
+
+
+class ChatTurn(BaseModel):
+    role: str
+    content: str
+
+class ChatRequest(BaseModel):
+    history: List[ChatTurn] = []
+    message: str
+
+class ChatResponse(BaseModel):
+    message: str
+
+@app.post("/api/v1/builds/chat", response_model=ChatResponse)
+async def builds_chat(req: ChatRequest):
+    reply = await gemini_client.chat_reply([t.model_dump() for t in req.history], req.message)
+    print(f"[builds_chat] reply[:160] = {repr(reply[:160])}")
+    return ChatResponse(message=reply)

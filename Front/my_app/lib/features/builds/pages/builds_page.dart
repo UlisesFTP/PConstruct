@@ -6,6 +6,8 @@ import 'package:my_app/core/api/api_client.dart';
 import 'package:my_app/models/build.dart';
 // Para formatear fechas (timeago)
 import 'package:timeago/timeago.dart' as timeago;
+import 'package:my_app/core/widgets/builds_chat.dart';
+import 'package:my_app/core/api/builds_chat_api.dart';
 
 // ❌ Eliminamos la clase mock 'CommunityBuild'
 // class CommunityBuild { ... }
@@ -32,11 +34,14 @@ class _BuildsPageState extends State<BuildsPage> {
   // ¡NUEVO ESTADO!
   late Future<List<BuildSummary>> _buildsFuture;
   late ApiClient _apiClient;
+  late final BuildsChatApi _chatApi;
 
   @override
   void initState() {
     super.initState();
     _apiClient = Provider.of<ApiClient>(context, listen: false);
+    _chatApi = BuildsChatApi('http://localhost:8000');
+
     // Seteamos el idioma para timeago
     timeago.setLocaleMessages('es', timeago.EsMessages());
     _loadBuilds();
@@ -184,6 +189,36 @@ class _BuildsPageState extends State<BuildsPage> {
           ],
         ),
         // Botón FAB (se mantiene igual)
+
+        // === FAB de Chat (izquierda del +) ===
+        Positioned(
+          bottom: 24,
+          right: 96, // 24 (margen) + 60 (ancho del +) + 12 (espacio)
+          child: SizedBox(
+            width: 60,
+            height: 60,
+            child: Material(
+              color: const Color(0xFFC7384D),
+              shape: const CircleBorder(),
+              elevation: 6,
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: () {
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (_) => BuildsChatSheet(api: _chatApi),
+                  );
+                },
+                child: const Center(
+                  child: Icon(Icons.chat_bubble, color: Colors.white, size: 28),
+                ),
+              ),
+            ),
+          ),
+        ),
+
         Positioned(
           bottom: 24,
           right: 24,

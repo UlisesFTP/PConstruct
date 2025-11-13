@@ -7,6 +7,8 @@ import 'package:my_app/models/build.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import 'dart:async'; // Para el Debouncer
+import 'package:my_app/core/widgets/builds_chat.dart';
+import 'package:my_app/core/api/builds_chat_api.dart';
 
 class BuildConstructorPage extends StatefulWidget {
   BuildConstructorPage({super.key});
@@ -18,6 +20,7 @@ class BuildConstructorPage extends StatefulWidget {
 class _BuildConstructorPageState extends State<BuildConstructorPage> {
   // --- API y Estado de Carga ---
   late ApiClient _apiClient;
+  late final BuildsChatApi _chatApi;
   bool _isSaving = false;
   bool _isCheckingCompatibility = false;
   Timer? _debounce;
@@ -92,6 +95,7 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
   void initState() {
     super.initState();
     _apiClient = Provider.of<ApiClient>(context, listen: false);
+    _chatApi = BuildsChatApi('http://localhost:8000');
 
     // 4. Usamos las claves del nuevo mapa
     for (var typeKey in apiCategoryMap.keys) {
@@ -1173,6 +1177,35 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                     ),
                   ],
                 ),
+                // === Botón: Chatea con Yarbis ===
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: Colors.transparent,
+                        builder: (_) => BuildsChatSheet(api: _chatApi),
+                      );
+                    },
+                    icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                    label: const Text('Chatea con Yarbis'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor:
+                          theme.primaryColor, // mismo estilo que Guardar
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: Colors.grey,
+                      minimumSize: const Size(double.infinity, 48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+
                 const SizedBox(height: 20),
                 ElevatedButton.icon(
                   onPressed: hasSelection && !_isSaving

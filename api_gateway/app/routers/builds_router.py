@@ -134,3 +134,11 @@ async def check_compatibility(request: Request):
         request=request,
         target_url=f"{BUILD_SERVICE_URL}/api/v1/builds/check-compatibility"
     )
+    
+@router.post("/chat")
+async def chat(request: Request):
+    return await forward_request(
+        request=request,
+        target_url=f"{BUILD_SERVICE_URL}/api/v1/builds/chat",
+        custom_headers={"X-Forward-Timeout": "30"}  # 30s solo para /chat
+    )

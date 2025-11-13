@@ -34,7 +34,22 @@ async def forward_request(
         body_bytes = await request.body()
     except Exception:
         body_bytes = None
+    
+    timeout_str = custom_headers.get("X-Forward-Timeout") or request.headers.get("X-Forward-Timeout")
+    try:
+        _t = float(timeout_str) if timeout_str else 10.0
+    except Exception:
+        _t = 10.0
 
+    response = await http_client.request(
+        method=request.method,
+        url=url,
+        headers=headers,
+        content=body_bytes,
+        timeout=httpx.Timeout(_t, connect=5.0, read=_t, write=_t)
+    )
+    
+    
     try:
         # Intenta hacer la petición al microservicio
         response = await http_client.request(
