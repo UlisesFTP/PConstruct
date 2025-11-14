@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:my_app/core/api/api_client.dart';
+import 'package:provider/provider.dart';
 
 class EmailVerificationPage extends StatefulWidget {
   const EmailVerificationPage({super.key});
@@ -11,7 +12,7 @@ class EmailVerificationPage extends StatefulWidget {
 class _EmailVerificationPageState extends State<EmailVerificationPage> {
   final FocusNode _codeFocusNode = FocusNode();
   final TextEditingController _codeController = TextEditingController();
-  final ApiClient _apiClient = ApiClient();
+  late ApiClient _apiClient;
 
   bool _isLoading = false;
   bool _isResending = false;
@@ -21,6 +22,7 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
   @override
   void initState() {
     super.initState();
+    _apiClient = Provider.of<ApiClient>(context, listen: false);
     _codeFocusNode.addListener(() => setState(() {}));
 
     // Obtener email de los argumentos si viene del registro

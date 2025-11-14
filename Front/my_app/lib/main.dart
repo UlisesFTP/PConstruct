@@ -96,6 +96,7 @@ class MyApp extends StatelessWidget {
       routes: {
         '/login': (context) => const LoginPage(),
         '/register': (context) => const RegistroPage(),
+        '/verification': (context) => const EmailVerificationPage(),
         '/feed': (context) => const MainLayout(child: FeedPage()),
         '/profile': (context) => const MainLayout(child: ProfilePage()),
         '/my-posts': (context) => const MainLayout(child: MyPostsPage()),

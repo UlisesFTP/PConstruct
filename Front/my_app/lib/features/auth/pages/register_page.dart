@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:my_app/core/widgets/layouts/auth_layout.dart';
 import 'package:my_app/core/widgets/custom_text_field.dart';
 import 'package:my_app/core/api/api_client.dart';
+import 'package:my_app/core/widgets/profile_picture_modal.dart';
+import 'package:provider/provider.dart';
 
 class RegistroPage extends StatefulWidget {
   const RegistroPage({super.key});
@@ -14,6 +16,7 @@ class _RegistroPageState extends State<RegistroPage> {
   bool _obscureText = true;
   bool _obscureConfirmText = true;
   bool _isLoading = false;
+  String? _avatarUrl;
 
   // Controladores para los campos
   final TextEditingController _firstNameController = TextEditingController();
@@ -23,7 +26,6 @@ class _RegistroPageState extends State<RegistroPage> {
   final TextEditingController _confirmPasswordController =
       TextEditingController();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-  final ApiClient _apiClient = ApiClient();
 
   @override
   void dispose() {
@@ -35,26 +37,37 @@ class _RegistroPageState extends State<RegistroPage> {
     super.dispose();
   }
 
-  // Validaciones
+  Future<void> _showProfilePictureModal() async {
+    final apiClient = Provider.of<ApiClient>(context, listen: false);
+
+    final String? result = await showModalBottomSheet<String?>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => ProfilePictureModal(apiClient: apiClient),
+    );
+
+    if (result != null) {
+      setState(() {
+        _avatarUrl = result;
+      });
+    }
+  }
+
+  // --- VALIDACIONES (SIN CAMBIOS) ---
   String? _validateFirstName(String? value) {
     if (value == null || value.isEmpty) {
-      return 'El nombre es requerido';
-    }
-    if (value.length < 2) {
-      return 'El nombre debe tener al menos 2 caracteres';
+      return 'Por favor ingresa tu nombre.';
     }
     return null;
   }
 
   String? _validateUsername(String? value) {
     if (value == null || value.isEmpty) {
-      return 'El usuario es requerido';
+      return 'Por favor ingresa un nombre de usuario.';
     }
-    if (value.length < 3) {
-      return 'El usuario debe tener al menos 3 caracteres';
-    }
-    if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(value)) {
-      return 'Solo letras, números y guiones bajos';
+    if (value.length < 4) {
+      return 'Debe tener al menos 4 caracteres.';
     }
     return null;
   }
@@ -71,46 +84,71 @@ class _RegistroPageState extends State<RegistroPage> {
 
   String? _validatePassword(String? value) {
     if (value == null || value.isEmpty) {
-      return 'La contraseña es requerida';
+      return 'Por favor ingresa una contraseña.';
     }
     if (value.length < 6) {
-      return 'Mínimo 6 caracteres';
-    }
-    if (!RegExp(r'^(?=.*[a-zA-Z])(?=.*\d)').hasMatch(value)) {
-      return 'Debe contener al menos una letra y un número';
+      return 'Debe tener al menos 6 caracteres.';
     }
     return null;
   }
 
   String? _validateConfirmPassword(String? value) {
     if (value == null || value.isEmpty) {
-      return 'Confirma tu contraseña';
+      return 'Por favor confirma tu contraseña.';
     }
     if (value != _passwordController.text) {
-      return 'Las contraseñas no coinciden';
+      return 'Las contraseñas no coinciden.';
     }
     return null;
   }
 
-  // Función para mostrar mensajes
-  void _showMessage(String message, {bool isError = true}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? Colors.red : Colors.green,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(16),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-    );
+  // --- _handleRegister (MODIFICADO) ---
+  Future<void> _handleRegister() async {
+    if (!_formKey.currentState!.validate())
+      return; // No hacer nada si no es válido
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    final apiClient = Provider.of<ApiClient>(context, listen: false);
+
+    try {
+      final bool registrationSuccess = await apiClient.register(
+        _firstNameController.text,
+        _usernameController.text,
+        _emailController.text,
+        _passwordController.text,
+        avatarUrl: _avatarUrl, // Pasa la URL (opcional)
+      );
+
+      if (registrationSuccess && mounted) {
+        // Llama al diálogo de éxito en lugar de navegar
+        _showSuccessDialog();
+      } else if (mounted) {
+        // Muestra un error si el APIClient devuelve 'false'
+        _showMessage('El registro falló. Revisa tus datos.', isError: true);
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      // Muestra cualquier otro error
+      if (mounted) {
+        _showMessage(e.toString(), isError: true);
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
-  // Función para navegar al login
+  // --- FUNCIONES RESTAURADAS ---
+
   void _navigateToLogin() {
     Navigator.pushReplacementNamed(context, '/login');
   }
 
-  // Función para navegar a verificación
   void _navigateToVerification() {
     Navigator.pushNamed(
       context,
@@ -122,52 +160,14 @@ class _RegistroPageState extends State<RegistroPage> {
     );
   }
 
-  // Función principal de registro
-  Future<void> _handleRegister() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      final response = await _apiClient.register(
-        name: _firstNameController.text
-            .trim(), // ✅ Correcto: name en vez de firstName
-        username: _usernameController.text.trim(),
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-      );
-
-      // Registro exitoso
-      _showMessage('¡Cuenta creada exitosamente!', isError: false);
-
-      // Mostrar diálogo de éxito y navegar a verificación
-      _showSuccessDialog();
-    } catch (e) {
-      String errorMessage = e.toString();
-
-      // Personalizar mensajes de error comunes
-      if (errorMessage.contains('already registered') ||
-          errorMessage.contains('ya existe')) {
-        errorMessage = 'El usuario o email ya están registrados';
-      } else if (errorMessage.contains('conexión') ||
-          errorMessage.contains('connection')) {
-        errorMessage = 'Error de conexión. Verifica tu internet';
-      }
-
-      _showMessage('Error: $errorMessage');
-    } finally {
+  void _showSuccessDialog() {
+    // Detenemos el loading cuando se muestra el diálogo
+    if (mounted) {
       setState(() {
         _isLoading = false;
       });
     }
-  }
 
-  // Diálogo de éxito
-  void _showSuccessDialog() {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -201,7 +201,9 @@ class _RegistroPageState extends State<RegistroPage> {
               Text(
                 _emailController.text.trim(),
                 style: TextStyle(
-                  color: Theme.of(context).primaryColor,
+                  color: Theme.of(
+                    context,
+                  ).primaryColor, // Usa el color del tema
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -229,173 +231,177 @@ class _RegistroPageState extends State<RegistroPage> {
     );
   }
 
+  void _showMessage(String message, {bool isError = true}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red : Colors.green,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
+  // --- FIN DE FUNCIONES RESTAURADAS ---
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isMobile = MediaQuery.of(context).size.width <= 800;
-
-    // Widget para los campos de Nombre y Usuario
-    Widget nameFields() {
-      if (isMobile) {
-        return Column(
-          children: [
-            CustomTextField(
-              controller: _firstNameController,
-              hintText: "Nombre",
-              icon: Icons.person_outline,
-              validator: _validateFirstName,
-            ),
-            const SizedBox(height: 16),
-            CustomTextField(
-              controller: _usernameController,
-              hintText: "Usuario",
-              icon: Icons.person_outline,
-              validator: _validateUsername,
-            ),
-          ],
-        );
-      }
-      return Row(
-        children: [
-          Expanded(
-            child: CustomTextField(
-              controller: _firstNameController,
-              hintText: "Nombre",
-              icon: Icons.assignment_ind_outlined,
-              validator: _validateFirstName,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: CustomTextField(
-              controller: _usernameController,
-              hintText: "Usuario",
-              icon: Icons.person_outline,
-              validator: _validateUsername,
-            ),
-          ),
-        ],
-      );
-    }
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
 
     return AuthLayout(
+      // Pasamos el formulario como 'formContent'
       formContent: Form(
         key: _formKey,
-        child: Column(
-          mainAxisAlignment: isMobile
-              ? MainAxisAlignment.start
-              : MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (isMobile) const SizedBox(height: 20),
-            Text(
-              "ÚNETE A LA COMUNIDAD",
-              style: TextStyle(
-                color: Colors.grey.shade400,
-                fontSize: isMobile ? 12 : 14,
-                letterSpacing: 1,
-              ),
-            ),
-            SizedBox(height: isMobile ? 6 : 8),
-            Text(
-              "Crear nueva cuenta.",
-              style: theme.textTheme.headlineMedium!.copyWith(
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-                fontSize: isMobile ? 24 : null,
-              ),
-            ),
-            SizedBox(height: isMobile ? 6 : 8),
-            GestureDetector(
-              onTap: _navigateToLogin,
-              child: Text.rich(
-                TextSpan(
-                  text: "¿Ya tienes cuenta? ",
-                  style: TextStyle(
-                    color: Colors.grey.shade500,
-                    fontSize: isMobile ? 14 : null,
-                  ),
+        // Usamos SingleChildScrollView para evitar el overflow
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // --- Sección de Avatar (Sin cambios) ---
+              const SizedBox(height: 20),
+              Center(
+                child: Column(
                   children: [
-                    TextSpan(
-                      text: "Iniciar sesión",
-                      style: TextStyle(
-                        color: theme.primaryColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: isMobile ? 14 : null,
+                    CircleAvatar(
+                      radius: 50,
+                      backgroundColor: const Color(0xFF2A2A2A),
+                      backgroundImage: _avatarUrl != null
+                          ? NetworkImage(_avatarUrl!)
+                          : null,
+                      child: _avatarUrl == null
+                          ? const Icon(
+                              Icons.person,
+                              size: 50,
+                              color: Color(0xFFA0A0A0),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextButton(
+                      onPressed: _showProfilePictureModal,
+                      child: const Text(
+                        'Seleccionar Foto de Perfil (Opcional)',
                       ),
                     ),
                   ],
                 ),
               ),
-            ),
-            SizedBox(height: isMobile ? 24 : 32),
 
-            nameFields(),
-            const SizedBox(height: 16),
-            CustomTextField(
-              controller: _emailController,
-              hintText: "Email",
-              icon: Icons.email_outlined,
-              keyboardType: TextInputType.emailAddress,
-              validator: _validateEmail,
-            ),
-            const SizedBox(height: 16),
-            CustomTextField(
-              controller: _passwordController,
-              hintText: "Contraseña",
-              icon: Icons.lock_outline,
-              obscureText: _obscureText,
-              validator: _validatePassword,
-              onToggleVisibility: () =>
-                  setState(() => _obscureText = !_obscureText),
-            ),
-            const SizedBox(height: 16),
-            CustomTextField(
-              controller: _confirmPasswordController,
-              hintText: "Confirmar Contraseña",
-              icon: Icons.lock_outline,
-              obscureText: _obscureConfirmText,
-              validator: _validateConfirmPassword,
-              onToggleVisibility: () =>
-                  setState(() => _obscureConfirmText = !_obscureConfirmText),
-            ),
-            SizedBox(height: isMobile ? 24 : 28),
+              // --- Fin Sección de Avatar ---
+              SizedBox(height: isMobile ? 16 : 24),
+              CustomTextField(
+                controller: _firstNameController,
+                hintText: 'Nombre',
+                icon: Icons.person_outline,
+                validator: _validateFirstName,
+              ),
+              SizedBox(height: isMobile ? 16 : 24),
+              CustomTextField(
+                controller: _usernameController,
+                hintText: 'Nombre de usuario',
+                icon: Icons.alternate_email,
+                validator: _validateUsername,
+              ),
+              SizedBox(height: isMobile ? 16 : 24),
+              CustomTextField(
+                controller: _emailController,
+                hintText: 'Email',
+                icon: Icons.email_outlined,
+                validator: _validateEmail,
+              ),
+              SizedBox(height: isMobile ? 16 : 24),
 
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(
-                    0xFFC7384D,
-                  ), // Color rojo específico
-                  foregroundColor: Colors.white, // Texto blanco
-                  padding: EdgeInsets.symmetric(vertical: isMobile ? 16 : 20),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(15),
+              // --- Campos de Contraseña (Corregidos) ---
+              CustomTextField(
+                controller: _passwordController,
+                hintText: 'Contraseña',
+                icon: Icons.lock_outline,
+                obscureText: _obscureText,
+                validator: _validatePassword,
+                onToggleVisibility: () {
+                  setState(() {
+                    _obscureText = !_obscureText;
+                  });
+                },
+              ),
+              SizedBox(height: isMobile ? 16 : 24),
+              CustomTextField(
+                controller: _confirmPasswordController,
+                hintText: 'Confirmar contraseña',
+                icon: Icons.lock_outline,
+                obscureText: _obscureConfirmText,
+                validator: _validateConfirmPassword,
+                onToggleVisibility: () {
+                  setState(() {
+                    _obscureConfirmText = !_obscureConfirmText;
+                  });
+                },
+              ),
+
+              // --- Fin Campos de Contraseña ---
+              SizedBox(height: isMobile ? 24 : 28),
+
+              SizedBox(
+                width: 300,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFC7384D),
+                    foregroundColor: Colors.white,
+                    padding: EdgeInsets.symmetric(vertical: isMobile ? 16 : 20),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                    ),
                   ),
-                ),
-                onPressed: _isLoading ? null : _handleRegister,
-                child: _isLoading
-                    ? SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Colors.white, // Loading indicator blanco
+                  onPressed: _isLoading ? null : _handleRegister,
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        )
+                      : Text(
+                          "Crear cuenta",
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: isMobile ? 16 : null,
                           ),
                         ),
-                      )
-                    : Text(
-                        "Crear cuenta",
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: isMobile ? 16 : null,
-                        ),
-                      ),
+                ),
               ),
-            ),
-          ],
+              SizedBox(height: isMobile ? 24 : 28),
+
+              // --- HIPERVÍNCULO DE LOGIN (CORREGIDO) ---
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text(
+                    "¿Ya tienes una cuenta? ",
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  GestureDetector(
+                    // Llama a la función restaurada
+                    onTap: _navigateToLogin,
+                    child: const Text(
+                      "Inicia sesión",
+                      style: TextStyle(
+                        // Color rojo de tu botón (como en la imagen ssad.PNG)
+                        color: Color(0xFFC7384D),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              // Espacio al final para el scroll
+              const SizedBox(height: 40),
+            ],
+          ),
         ),
       ),
     );

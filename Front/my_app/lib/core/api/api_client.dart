@@ -74,25 +74,52 @@ class ApiClient {
     }
   }
 
-  Future<Map<String, dynamic>> register({
-    required String name,
-    required String username,
-    required String email,
-    required String password,
+  Future<bool> register(
+    String name,
+    String username,
+    String email,
+    String password, {
+    String? avatarUrl, // <-- AÑADE ESTE PARÁMETRO OPCIONAL
   }) async {
     try {
-      final response = await _dio.post(
-        '/auth/register',
-        data: {
-          'name': name,
-          'username': username,
-          'email': email,
-          'password': password,
-        },
+      // Prepara los datos
+      final Map<String, dynamic> data = {
+        'name': name,
+        'username': username,
+        'email': email,
+        'password': password,
+      };
+
+      // Añade el avatar_url solo si no es nulo
+      if (avatarUrl != null) {
+        data['avatar_url'] = avatarUrl;
+      }
+
+      // Llama al endpoint de registro del gateway
+      await _dio.post(
+        '/auth/register', // Endpoint del API Gateway
+        data: data,
       );
-      return response.data;
+
+      // Si llega aquí, el registro (200 OK) fue exitoso
+      return true;
     } on DioException catch (e) {
-      _handleDioError(e, 'Error desconocido al registrar.');
+      // _handleDioError ya debería mostrar el error (ej. "Usuario ya existe")
+      _handleDioError(e, 'Error al registrar la cuenta.');
+      return false;
+    } catch (e) {
+      print("Error inesperado en register: $e");
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>> getProfileUploadSignature() async {
+    try {
+      // Este es el nuevo endpoint que creamos en el backend
+      final response = await _dio.post('/users/generate-upload-signature');
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      _handleDioError(e, 'Error al obtener la firma para la subida.');
       rethrow;
     }
   }

@@ -7,6 +7,7 @@ class UserBase(BaseModel):
     username: str
     email: EmailStr
     name: Optional[str] = None  # Coincide con tu esquema
+    avatar_url: Optional[str] = None # <-- AÑADIR ESTA LÍNEA
 
 class UserCreate(UserBase):
     password: str
@@ -18,6 +19,7 @@ class UserResponse(UserBase):
     role: str
     country_code: Optional[str] = None
     created_at: Optional[datetime] = None
+    avatar_url: Optional[str] = None
     updated_at: Optional[datetime] = None
     last_login: Optional[datetime] = None
 
@@ -45,7 +47,7 @@ class EmailVerificationRequest(BaseModel):
 class ResendVerificationRequest(BaseModel):
     email: EmailStr
 
-class PasswordResetRequest(BaseModel):
+class PasswordResetRequest(BaseModel): # <--- Tienes esta clase duplicada
     email: EmailStr
 
 # Respuestas estándar
@@ -54,7 +56,7 @@ class MessageResponse(BaseModel):
     success: bool = True
     
     
-class PasswordResetRequest(BaseModel):
+class PasswordResetRequest(BaseModel): # <--- Tienes esta clase duplicada
     email: EmailStr
 
 class PasswordResetConfirm(BaseModel):
@@ -63,9 +65,10 @@ class PasswordResetConfirm(BaseModel):
     
     
 class UserSummary(BaseModel):
-    """Esquema reducido con la información pública de un usuario."""
+    """Esquema reducido con la información pública del usuario."""
     user_id: int
     username: str
-    name: Optional[str] = None
-    
-    model_config = ConfigDict(from_attributes=True)
+    avatar_url: Optional[str] = None # <-- AÑADIR ESTA LÍNEA
+
+    class Config:
+        orm_mode = True

@@ -12,6 +12,7 @@ class User(Base):
     email = Column(String(100), unique=True, index=True, nullable=False)
     name = Column(String(255))  # Nuevo campo en tu esquema
     hashed_password = Column(String(200), nullable=False)
+    avatar_url = Column(String(255), nullable=True) # <-- AÑADIR ESTA LÍNEA
     is_active = Column(Boolean, default=True)
     role = Column(String(20), default="user")
     is_verified = Column(Boolean, nullable=False, default=False)

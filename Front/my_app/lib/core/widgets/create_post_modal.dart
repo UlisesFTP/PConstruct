@@ -4,22 +4,13 @@ import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:my_app/core/api/api_client.dart';
 import 'dart:typed_data';
 import 'package:provider/provider.dart'; // <-- ASEGÚRATE DE TENER ESTE IMPORT
-import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 class CreatePostModal extends StatefulWidget {
   final VoidCallback onPostCreated;
 
-  // ❌ ELIMINADO: Ya no necesitamos recibir el apiClient aquí.
-  // final ApiClient apiClient;
-
-  const CreatePostModal({
-    super.key,
-    required this.onPostCreated,
-    // ❌ ELIMINADO: Se quita del constructor.
-    // required this.apiClient,
-  });
+  const CreatePostModal({super.key, required this.onPostCreated});
 
   @override
   State<CreatePostModal> createState() => _CreatePostModalState();
@@ -74,7 +65,6 @@ class _CreatePostModalState extends State<CreatePostModal> {
     }
   }
 
-  // ✅ FUNCIÓN CORREGIDA
   Future<void> _submitPost() async {
     if (!_formKey.currentState!.validate()) return;
 

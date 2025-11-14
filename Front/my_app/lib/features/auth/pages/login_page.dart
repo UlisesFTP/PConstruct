@@ -252,7 +252,7 @@ class _LoginPageState extends State<LoginPage> {
             SizedBox(height: isMobile ? 32 : 40),
 
             SizedBox(
-              width: double.infinity,
+              width: 300,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(
