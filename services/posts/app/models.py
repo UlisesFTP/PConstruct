@@ -16,16 +16,30 @@ class Post(Base):
     image_url = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
-    # Relaciones
-    likes = relationship("Like", back_populates="post", cascade="all, delete-orphan")
-    comments = relationship("Comment", back_populates="post", cascade="all, delete-orphan")
+    # --- INICIO DE LA CORRECCIÓN ---
+    # Añadimos 'cascade="all, delete-orphan"' para que al borrar un Post,
+    # se borren sus 'likes' y 'comments' automáticamente.
+    likes = relationship(
+        "Like", 
+        back_populates="post", 
+        cascade="all, delete-orphan" # <-- AÑADIR ESTO
+    )
+    comments = relationship(
+        "Comment", 
+        back_populates="post", 
+        cascade="all, delete-orphan" # <-- AÑADIR ESTO
+    )
+    # --- FIN DE LA CORRECCIÓN ---
 
 class Like(Base):
     __tablename__ = "likes"
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, nullable=False)
-    post_id = Column(Integer, ForeignKey("posts.id"), nullable=False)
+    # --- INICIO DE LA CORRECCIÓN ---
+    # Asegúrate de que ForeignKey apunte a "posts.id"
+    post_id = Column(Integer, ForeignKey("posts.id"), nullable=False) 
+    # --- FIN DE LA CORRECCIÓN ---
 
     post = relationship("Post", back_populates="likes")
 
@@ -37,7 +51,10 @@ class Comment(Base):
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, nullable=False)
+    # --- INICIO DE LA CORRECCIÓN ---
+    # Asegúrate de que ForeignKey apunte a "posts.id"
     post_id = Column(Integer, ForeignKey("posts.id"), nullable=False)
+    # --- FIN DE LA CORRECCIÓN ---
     content = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     

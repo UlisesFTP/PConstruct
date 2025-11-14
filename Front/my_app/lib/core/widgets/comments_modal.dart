@@ -7,7 +7,13 @@ import 'package:timeago/timeago.dart' as timeago;
 class CommentsModal extends StatefulWidget {
   final int postId;
 
-  const CommentsModal({super.key, required this.postId});
+  final bool canComment;
+
+  const CommentsModal({
+    super.key,
+    required this.postId,
+    this.canComment = true,
+  });
 
   @override
   State<CommentsModal> createState() => _CommentsModalState();

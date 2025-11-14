@@ -3,16 +3,16 @@ import 'dart:ui';
 import 'package:provider/provider.dart';
 import 'package:my_app/core/api/api_client.dart';
 import 'package:my_app/models/posts.dart';
-import 'package:my_app/core/widgets/create_post_modal.dart';
+import 'package:my_app/core/widgets/comments_modal.dart'; // Importar modal de comentarios
+import 'package:my_app/core/widgets/edit_post_modal.dart'; // Importar nuevo modal de edición
 import 'package:my_app/providers/auth_provider.dart';
 
-// --- INICIO DE CORRECCIÓN: Importar reproductores y kIsWeb ---
+// --- (Importaciones de reproductores de video) ---
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:youtube_player_iframe/youtube_player_iframe.dart'
     as iframe_player;
 import 'package:youtube_player_flutter/youtube_player_flutter.dart'
     as mobile_player;
-// --- FIN DE CORRECCIÓN ---
 
 class MyPostsPage extends StatefulWidget {
   const MyPostsPage({super.key});
@@ -33,352 +33,288 @@ class _MyPostsPageState extends State<MyPostsPage> {
   void _refreshPosts() {
     final apiClient = Provider.of<ApiClient>(context, listen: false);
     setState(() {
-      _postsFuture = apiClient.getPosts();
+      // --- LÓGICA CORREGIDA ---
+      // Llamamos al nuevo endpoint de ApiClient
+      _postsFuture = apiClient.getMyPosts();
+      // --- FIN DE LA CORRECCIÓN ---
     });
   }
 
-  void _openCreatePostModal() {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent, // Fondo transparente
+      body: FutureBuilder<List<Post>>(
+        future: _postsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(color: Color(0xFF00C5A0)),
+            );
+          }
+          if (snapshot.hasError) {
+            return Center(
+              child: Text(
+                'Error al cargar tus posts: ${snapshot.error}',
+                style: const TextStyle(color: Colors.white),
+              ),
+            );
+          }
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(
+              child: Text(
+                'No has creado ninguna publicación.',
+                style: TextStyle(color: Colors.white70),
+              ),
+            );
+          }
+
+          final posts = snapshot.data!;
+          return RefreshIndicator(
+            onRefresh: () async => _refreshPosts(),
+            child: ListView.builder(
+              itemCount: posts.length,
+              itemBuilder: (context, index) {
+                // --- LÓGICA CORREGIDA ---
+                // Pasamos el post real al card y
+                // un callback para refrescar la lista
+                return _MyPostCard(
+                  post: posts[index],
+                  onPostDeleted: _refreshPosts,
+                  onPostUpdated: _refreshPosts,
+                );
+                // --- FIN DE LA CORRECCIÓN ---
+              },
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// --- WIDGET DEL POST CARD TOTALMENTE ACTUALIZADO ---
+class _MyPostCard extends StatefulWidget {
+  final Post post;
+  final VoidCallback onPostDeleted;
+  final VoidCallback onPostUpdated;
+
+  const _MyPostCard({
+    required this.post,
+    required this.onPostDeleted,
+    required this.onPostUpdated,
+  });
+
+  @override
+  State<_MyPostCard> createState() => _MyPostCardState();
+}
+
+class _MyPostCardState extends State<_MyPostCard> {
+  mobile_player.YoutubePlayerController? _mobileYoutubeController;
+  iframe_player.YoutubePlayerController? _iFrameYoutubeController;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializePlayer(widget.post.content);
+  }
+
+  @override
+  void didUpdateWidget(covariant _MyPostCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.post.content != oldWidget.post.content) {
+      _initializePlayer(widget.post.content);
+    }
+  }
+
+  void _initializePlayer(String content) {
+    final videoId = _extractVideoId(content);
+    if (videoId != null) {
+      if (kIsWeb) {
+        _iFrameYoutubeController = iframe_player.YoutubePlayerController(
+          params: const iframe_player.YoutubePlayerParams(
+            showControls: true,
+            showFullscreenButton: true,
+            strictRelatedVideos: true,
+          ),
+        )..loadVideoById(videoId: videoId);
+      } else {
+        _mobileYoutubeController = mobile_player.YoutubePlayerController(
+          initialVideoId: videoId,
+          flags: const mobile_player.YoutubePlayerFlags(autoPlay: false),
+        );
+      }
+    } else {
+      _mobileYoutubeController?.dispose();
+      _iFrameYoutubeController?.close();
+      _mobileYoutubeController = null;
+      _iFrameYoutubeController = null;
+    }
+  }
+
+  String? _extractVideoId(String content) {
+    if (content.isEmpty) return null;
+    try {
+      final regExp = RegExp(
+        r".*(?:youtu.be/|v/|u/\w/|embed/|watch\?v=)([^#&?]*).*",
+        caseSensitive: false,
+      );
+      final match = regExp.firstMatch(content);
+      return (match != null && match.group(1)!.length == 11)
+          ? match.group(1)
+          : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Widget _buildMedia(String url) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12.0),
+      child: Image.network(
+        url,
+        width: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return const Center(child: Icon(Icons.error, color: Colors.red));
+        },
+      ),
+    );
+  }
+
+  // --- NUEVA FUNCIÓN: Mostrar modal de edición ---
+  void _showEditModal(BuildContext context) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF1A1A1C),
-      builder: (modalContext) => CreatePostModal(onPostCreated: _refreshPosts),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bool isDesktop = MediaQuery.of(context).size.width >= 768;
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-
-    return Stack(
-      children: [
-        // ... (Gradientes se mantienen igual) ...
-        Positioned(
-          top: 0,
-          left: 0,
-          child: Container(
-            width: MediaQuery.of(context).size.width * 0.5,
-            height: MediaQuery.of(context).size.height * 0.3,
-            decoration: BoxDecoration(
-              gradient: RadialGradient(
-                center: Alignment.topLeft,
-                radius: 1.5,
-                colors: [
-                  const Color(0xFFC7384D).withOpacity(0.1),
-                  Colors.transparent,
-                ],
-              ),
-            ),
-          ),
-        ),
-        Positioned(
-          bottom: 0,
-          right: 0,
-          child: Container(
-            width: MediaQuery.of(context).size.width * 0.4,
-            height: MediaQuery.of(context).size.height * 0.25,
-            decoration: BoxDecoration(
-              gradient: RadialGradient(
-                center: Alignment.bottomRight,
-                radius: 1.2,
-                colors: [
-                  const Color(0xFFC7384D).withOpacity(0.05),
-                  Colors.transparent,
-                ],
-              ),
-            ),
-          ),
-        ),
-        // Contenido principal
-        SingleChildScrollView(
-          padding: EdgeInsets.symmetric(
-            horizontal: isDesktop ? 32 : 24,
-            vertical: 24,
-          ),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 768),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // ... (Header con título y botón se mantiene igual) ...
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Mis Publicaciones',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 30,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      ElevatedButton.icon(
-                        onPressed: _openCreatePostModal,
-                        icon: const Icon(Icons.add, color: Colors.white),
-                        label: const Text(
-                          'Crear Publicación',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFC7384D),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 32),
-
-                  // Lista de publicaciones
-                  FutureBuilder<List<Post>>(
-                    future: _postsFuture,
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      if (snapshot.hasError) {
-                        return Center(child: Text('Error: ${snapshot.error}'));
-                      }
-                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                        return const Center(
-                          child: Text('Aún no tienes publicaciones.'),
-                        );
-                      }
-
-                      final myPosts = snapshot.data!;
-
-                      return ListView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: myPosts.length,
-                        itemBuilder: (context, index) {
-                          final post = myPosts[index];
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 32),
-                            child: MyPostCard(
-                              post: post,
-                              currentUserAvatar: authProvider
-                                  .user
-                                  ?.email, // TODO: Cambiar por avatarUrl
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// TARJETA DE PUBLICACIÓN
-class MyPostCard extends StatefulWidget {
-  final Post post;
-  final String? currentUserAvatar;
-
-  const MyPostCard({super.key, required this.post, this.currentUserAvatar});
-
-  @override
-  State<MyPostCard> createState() => _MyPostCardState();
-}
-
-class _MyPostCardState extends State<MyPostCard> {
-  // --- INICIO DE CORRECCIÓN: Copiar _buildMedia de FeedPage ---
-  Widget _buildMedia(String url) {
-    // Usamos el conversor de 'youtube_player_flutter'
-    final String? videoId = mobile_player.YoutubePlayer.convertUrlToId(url);
-
-    if (videoId != null) {
-      // Si es un video, decidimos qué reproductor usar
-      if (kIsWeb) {
-        // --- CÓDIGO PARA WEB ---
-        final _controller = iframe_player.YoutubePlayerController.fromVideoId(
-          videoId: videoId,
-          autoPlay: false,
-          params: const iframe_player.YoutubePlayerParams(
-            showControls: true,
-            showFullscreenButton: true,
-          ),
-        );
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: iframe_player.YoutubePlayer(
-            controller: _controller,
-            aspectRatio: 16 / 9,
-          ),
-        );
-      } else {
-        // --- CÓDIGO PARA ANDROID / iOS ---
-        final _controller = mobile_player.YoutubePlayerController(
-          initialVideoId: videoId,
-          flags: const mobile_player.YoutubePlayerFlags(
-            autoPlay: false,
-            mute: false,
-          ),
-        );
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: mobile_player.YoutubePlayer(
-            controller: _controller,
-            showVideoProgressIndicator: true,
-            aspectRatio: 16 / 9,
-          ),
-        );
-      }
-    } else {
-      // Si no es un video, es una imagen
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Image.network(
-          url,
-          width: double.infinity,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade900,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Center(
-                child: Text(
-                  'No se pudo cargar el medio', // Mensaje genérico
-                  style: TextStyle(color: Colors.grey),
-                ),
-              ),
-            );
+      builder: (modalContext) {
+        return EditPostModal(
+          post: widget.post,
+          onPostUpdated: () {
+            // Llama al callback que refresca la lista
+            widget.onPostUpdated();
           },
-        ),
-      );
-    }
+        );
+      },
+    );
   }
-  // --- FIN DE CORRECCIÓN ---
+
+  // --- NUEVA FUNCIÓN: Mostrar diálogo de eliminación ---
+  void _showDeleteDialog(BuildContext context) {
+    final apiClient = Provider.of<ApiClient>(context, listen: false);
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Eliminar Publicación'),
+        content: const Text(
+          '¿Estás seguro de que deseas eliminar este post? Esta acción no se puede deshacer.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () async {
+              try {
+                await apiClient.deletePost(widget.post.id);
+                Navigator.of(dialogContext).pop(); // Cierra el diálogo
+                widget.onPostDeleted(); // Refresca la lista
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Post eliminado con éxito')),
+                );
+              } catch (e) {
+                Navigator.of(dialogContext).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Error al eliminar el post: $e')),
+                );
+              }
+            },
+            child: const Text('Eliminar', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _mobileYoutubeController?.dispose();
+    _iFrameYoutubeController?.close();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12.0),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          decoration: BoxDecoration(
-            color: const Color.fromRGBO(28, 28, 28, 0.7),
-            borderRadius: BorderRadius.circular(12.0),
-            border: Border.all(color: const Color(0xFF2A2A2A), width: 1),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ... (Header con avatar y menú se mantiene igual) ...
-              Padding(
-                padding: const EdgeInsets.all(24.0),
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final user = authProvider.user; // Obtenemos el usuario logueado
+
+    return Center(
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 600),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16.0),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color.fromRGBO(28, 28, 28, 0.7),
+                  borderRadius: BorderRadius.circular(16.0),
+                  border: Border.all(color: const Color(0xFF2A2A2A), width: 1),
+                ),
+                padding: const EdgeInsets.all(20.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
+                        CircleAvatar(
+                          radius: 24,
+                          // Usamos el avatar del usuario logueado
+                          backgroundImage: (user?.avatarUrl != null)
+                              ? NetworkImage(user!.avatarUrl!)
+                              : null,
+                          child: (user?.avatarUrl == null)
+                              ? const Icon(Icons.person)
+                              : null,
+                        ),
+                        const SizedBox(width: 16),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            CircleAvatar(
-                              radius: 24,
-                              backgroundImage:
-                                  widget.post.authorAvatarUrl != null
-                                  ? NetworkImage(widget.post.authorAvatarUrl!)
-                                  : null,
-                              child: widget.post.authorAvatarUrl == null
-                                  ? const Icon(Icons.person)
-                                  : null,
-                            ),
-                            const SizedBox(width: 16),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  widget.post.authorUsername ?? 'Usuario',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.white,
-                                    fontSize: 15,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  "hace 2 horas", // TODO: Calcular timeago
-                                  style: const TextStyle(
-                                    color: Color(0xFFA0A0A0),
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
+                            Text(
+                              // Usamos el username del usuario logueado
+                              user?.username ?? 'Mi Usuario',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                                fontSize: 15,
+                              ),
                             ),
                           ],
                         ),
-                        PopupMenuButton<String>(
+                        const Spacer(), // Ocupa espacio
+                        // --- NUEVO: Botón de Editar ---
+                        IconButton(
+                          onPressed: () => _showEditModal(context),
                           icon: const Icon(
-                            Icons.more_horiz,
+                            Icons.edit_outlined,
                             color: Color(0xFFA0A0A0),
+                            size: 20,
                           ),
-                          color: const Color(0xFF2A2A2A),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+                        ),
+                        // --- NUEVO: Botón de Eliminar ---
+                        IconButton(
+                          onPressed: () => _showDeleteDialog(context),
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: Color(0xFFA0A0A0),
+                            size: 20,
                           ),
-                          itemBuilder: (context) => [
-                            const PopupMenuItem(
-                              value: 'edit',
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.edit,
-                                    size: 18,
-                                    color: Color(0xFFE0E0E0),
-                                  ),
-                                  SizedBox(width: 12),
-                                  Text(
-                                    'Editar',
-                                    style: TextStyle(color: Color(0xFFE0E0E0)),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const PopupMenuItem(
-                              value: 'delete',
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.delete,
-                                    size: 18,
-                                    color: Colors.redAccent,
-                                  ),
-                                  SizedBox(width: 12),
-                                  Text(
-                                    'Eliminar',
-                                    style: TextStyle(color: Colors.redAccent),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                          onSelected: (value) {
-                            if (value == 'edit') {
-                            } else if (value == 'delete') {}
-                          },
                         ),
                       ],
                     ),
@@ -392,117 +328,109 @@ class _MyPostCardState extends State<MyPostCard> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    Text(
-                      widget.post.content,
-                      style: const TextStyle(
-                        color: Color(0xFFE0E0E0),
-                        height: 1.5,
-                        fontSize: 15,
+                    // ... (Manejo de contenido de texto)
+                    if (_mobileYoutubeController == null &&
+                        _iFrameYoutubeController == null)
+                      Text(
+                        widget.post.content,
+                        style: const TextStyle(
+                          color: Color(0xFFE0E0E0),
+                          height: 1.5,
+                          fontSize: 15,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
+                    // ... (Manejo de imagen)
+                    if (widget.post.imageUrl != null &&
+                        widget.post.imageUrl!.isNotEmpty &&
+                        _mobileYoutubeController == null &&
+                        _iFrameYoutubeController == null) ...[
+                      const SizedBox(height: 16),
+                      _buildMedia(widget.post.imageUrl!),
+                    ],
+                    // ... (Manejo de video)
+                    if (_mobileYoutubeController != null && !kIsWeb)
+                      mobile_player.YoutubePlayer(
+                        controller: _mobileYoutubeController!,
+                      ),
+                    if (_iFrameYoutubeController != null && kIsWeb)
+                      iframe_player.YoutubePlayer(
+                        controller: _iFrameYoutubeController!,
+                      ),
 
-              // --- INICIO DE CORRECCIÓN: Usar _buildMedia ---
-              if (widget.post.imageUrl != null &&
-                  widget.post.imageUrl!.isNotEmpty)
-                Padding(
-                  // Añadimos padding si el medio no es una imagen (para que no toque los bordes)
-                  padding:
-                      (mobile_player.YoutubePlayer.convertUrlToId(
-                            widget.post.imageUrl!,
-                          ) !=
-                          null)
-                      ? const EdgeInsets.symmetric(horizontal: 24)
-                      : EdgeInsets.zero,
-                  child: _buildMedia(widget.post.imageUrl!),
-                ),
-              // --- FIN DE CORRECCIÓN ---
-
-              // ... (Acciones de like/comentario se mantienen igual) ...
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration:
-                    widget.post.imageUrl != null &&
-                        widget.post.imageUrl!.isNotEmpty
-                    ? const BoxDecoration(
-                        border: Border(
-                          top: BorderSide(color: Color(0xFF2A2A2A), width: 1),
-                        ),
-                      )
-                    : null,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
+                    const SizedBox(height: 16),
+                    const Divider(color: Color(0xFF2A2A2A), height: 1),
+                    const SizedBox(height: 16),
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        InkWell(
-                          onTap: () {},
-                          child: Row(
-                            children: [
-                              Icon(
-                                widget.post.isLikedByUser
-                                    ? Icons.whatshot
-                                    : Icons.whatshot_outlined,
-                                color: widget.post.isLikedByUser
-                                    ? const Color(0xFFC7384D)
-                                    : const Color(0xFFA0A0A0),
-                                size: 22,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                widget.post.likesCount.toString(),
-                                style: TextStyle(
-                                  color: widget.post.isLikedByUser
-                                      ? Colors.white
-                                      : const Color(0xFFA0A0A0),
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 15,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 24),
-                        InkWell(
-                          onTap: () {},
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.comment,
+                        // --- LÓGICA DE LIKES (SOLO VISTA) ---
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.whatshot, // Icono estático
+                              color: Color(0xFFA0A0A0),
+                              size: 22,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              widget.post.likesCount
+                                  .toString(), // Contador real
+                              style: const TextStyle(
                                 color: Color(0xFFA0A0A0),
-                                size: 20,
+                                fontSize: 15,
                               ),
-                              const SizedBox(width: 4),
-                              Text(
-                                "0", // TODO: Añadir contador de comentarios
-                                style: const TextStyle(
+                            ),
+                          ],
+                        ),
+
+                        // --- LÓGICA DE COMENTARIOS (SOLO VISTA) ---
+                        InkWell(
+                          onTap: () {
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              backgroundColor: const Color(0xFF1A1A1C),
+                              builder: (modalContext) {
+                                return CommentsModal(
+                                  postId: widget.post.id,
+                                  // ¡Importante! Ocultamos la caja de texto
+                                  canComment: false,
+                                );
+                              },
+                            );
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8.0,
+                              vertical: 4.0,
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.chat_bubble_outline,
                                   color: Color(0xFFA0A0A0),
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 15,
+                                  size: 20,
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: 4),
+                                Text(
+                                  widget.post.commentsCount
+                                      .toString(), // Contador real
+                                  style: const TextStyle(
+                                    color: Color(0xFFA0A0A0),
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ],
                     ),
-                    IconButton(
-                      onPressed: () {},
-                      icon: Icon(
-                        false // TODO: Usar variable isBookmarked
-                            ? Icons.bookmark
-                            : Icons.bookmark_border,
-                        color: false
-                            ? const Color(0xFFC7384D)
-                            : const Color(0xFFA0A0A0),
-                      ),
-                    ),
                   ],
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),

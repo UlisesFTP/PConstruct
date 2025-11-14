@@ -30,6 +30,14 @@ class PostBase(BaseModel):
 class PostCreate(PostBase):
     pass
 
+# --- AÑADE ESTA CLASE ---
+# Este es el schema que faltaba, para la validación de la ACTUALIZACIÓN
+class PostUpdate(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+# -------------------------
+
+
 # Esquema para mostrar una publicación, incluyendo comentarios y conteo de likes
 class Post(PostBase):
     id: int
@@ -39,9 +47,11 @@ class Post(PostBase):
     likes_count: int = 0
     author_username: Optional[str] = None
     author_avatar_url: Optional[str] = None
+    is_liked_by_user: bool = False
     
     # --- AÑADE ESTE CAMPO ---
-    is_liked_by_user: bool = False # Por defecto es False
+    # Para que la página "Mis Posts" pueda mostrar el conteo
+    comments_count: int = 0
     # -------------------------
 
     model_config = ConfigDict(from_attributes=True)

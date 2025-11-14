@@ -3,7 +3,7 @@ import httpx
 import json
 from fastapi import (
     FastAPI, Depends, HTTPException, Header, status,
-    WebSocket, WebSocketDisconnect
+    WebSocket, WebSocketDisconnect,Response
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional, Set
@@ -274,3 +274,86 @@ async def read_comments_for_post(
         results.append(comment_data)
         
     return results
+
+@app.get("/posts/me/", response_model=List[schemas.Post])
+async def read_my_posts(
+    skip: int = 0, 
+    limit: int = 20, 
+    db: AsyncSession = Depends(get_db),
+    user_id: int = Depends(get_current_user_id) # Requiere autenticación
+):
+    """Obtiene solo los posts del usuario autenticado."""
+    # Usamos la nueva función de crud
+    posts_data = await crud.get_posts_by_user_id(db, user_id=user_id, skip=skip, limit=limit)
+    
+    # (El enriquecimiento de autor no es necesario,
+    # pero los conteos ya vienen de la función crud)
+            
+    return posts_data
+
+
+@app.put("/posts/{post_id}", response_model=schemas.Post)
+async def update_post_endpoint(
+    post_id: int,
+    post_update: schemas.PostUpdate, # Schema solo con title y content
+    db: AsyncSession = Depends(get_db),
+    user_id: int = Depends(get_current_user_id)
+):
+    """Actualiza un post. Solo el propietario puede."""
+    db_post = await crud.get_post_by_id(db, post_id=post_id)
+    
+    if not db_post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    
+    # --- Verificación de Propiedad ---
+    if db_post.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to update this post")
+
+    updated_post = await crud.update_post(db=db, post_id=post_id, post_update=post_update)
+
+    # --- DISPARADOR WEBSOCKET (EDICIÓN) ---
+    await manager.broadcast(json.dumps({
+        "event": "post_update", 
+        "action": "edit", # Acción específica de edición
+        "post_id": updated_post.id
+    }))
+    # --- Fin Disparador ---
+    
+    # Devolvemos el post actualizado (cargando relaciones manualmente)
+    await db.refresh(updated_post, ["comments", "likes"])
+    post_data = schemas.Post.model_validate(updated_post)
+    post_data.likes_count = len(updated_post.likes)
+    post_data.comments_count = len(updated_post.comments)
+    return post_data
+
+
+# --- NUEVO ENDPOINT: DELETE /posts/{post_id} ---
+@app.delete("/posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_post_endpoint(
+    post_id: int,
+    db: AsyncSession = Depends(get_db),
+    user_id: int = Depends(get_current_user_id)
+):
+    """Elimina un post. Solo el propietario puede."""
+    db_post = await crud.get_post_by_id(db, post_id=post_id)
+    
+    if not db_post:
+        raise HTTPException(status_code=404, detail="Post not found")
+        
+    # --- Verificación de Propiedad ---
+    if db_post.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this post")
+
+    deleted = await crud.delete_post(db=db, post_id=post_id)
+    
+    if deleted:
+        # --- DISPARADOR WEBSOCKET (ELIMINACIÓN) ---
+        await manager.broadcast(json.dumps({
+            "event": "post_delete", # Evento nuevo
+            "post_id": post_id
+        }))
+        # --- Fin Disparador ---
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    else:
+        # Esto no debería pasar si la comprobación anterior funcionó
+        raise HTTPException(status_code=404, detail="Post not found")

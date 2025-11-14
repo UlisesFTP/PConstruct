@@ -5,6 +5,7 @@ from sqlalchemy.sql.expression import extract
 from . import models, schemas
 from typing import Optional
 from datetime import datetime, timedelta
+from sqlalchemy import update, delete
 
 # --- CRUD para Publicaciones (Posts) ---
 
@@ -195,3 +196,64 @@ async def remove_like_from_post(db: AsyncSession, post_id: int, user_id: int):
     await db.commit()
     # rowcount > 0 significa que se eliminó algo (el like existía)
     return result.rowcount > 0
+
+
+
+
+# --- NUEVA FUNCIÓN: Obtener posts por user_id ---
+async def get_posts_by_user_id(db: AsyncSession, user_id: int, skip: int = 0, limit: int = 20):
+    """Obtiene todos los posts de un usuario específico."""
+    query = (
+        select(models.Post)
+        .filter(models.Post.user_id == user_id)
+        .order_by(models.Post.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .options(
+            selectinload(models.Post.comments),
+            selectinload(models.Post.likes)
+        )
+    )
+    result = await db.execute(query)
+    posts = result.scalars().unique().all()
+    
+    # Construimos la respuesta
+    post_data_list = []
+    for post in posts:
+        post_data = schemas.Post.model_validate(post)
+        post_data.likes_count = len(post.likes)
+        # Para "Mis Posts", no necesitamos 'is_liked_by_user'
+        # pero sí podríamos querer el conteo de comentarios
+        post_data.comments_count = len(post.comments) # <-- Asumiremos que añades esto al schema
+        post_data_list.append(post_data)
+        
+    return post_data_list
+
+# --- NUEVA FUNCIÓN: Obtener un post (para verificar propiedad) ---
+async def get_post_by_id(db: AsyncSession, post_id: int):
+    """Obtiene un post simple por ID."""
+    query = select(models.Post).filter(models.Post.id == post_id)
+    result = await db.execute(query)
+    return result.scalars().first()
+
+# --- NUEVA FUNCIÓN: Actualizar un post ---
+async def update_post(db: AsyncSession, post_id: int, post_update: schemas.PostUpdate):
+    """Actualiza el título y contenido de un post."""
+    stmt = (
+        update(models.Post)
+        .where(models.Post.id == post_id)
+        .values(**post_update.model_dump(exclude_unset=True))
+        .returning(models.Post) # Devuelve el post actualizado
+    )
+    result = await db.execute(stmt)
+    await db.commit()
+    return result.scalars().first()
+
+
+# --- NUEVA FUNCIÓN: Eliminar un post ---
+async def delete_post(db: AsyncSession, post_id: int):
+    """Elimina un post por ID."""
+    stmt = delete(models.Post).where(models.Post.id == post_id)
+    result = await db.execute(stmt)
+    await db.commit()
+    return result.rowcount > 0 # Devuelve True si se eliminó algo

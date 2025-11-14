@@ -7,19 +7,30 @@ class User {
   final int id;
   final String username;
   final String email;
-  User({required this.id, required this.username, required this.email});
+  final String? avatarUrl;
+  User({
+    required this.id,
+    required this.username,
+    required this.email,
+    this.avatarUrl,
+  });
 
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
       id: json['user_id'],
       username: json['username'],
       email: json['email'],
+      avatarUrl: json['avatar_url'],
     );
   }
 
-  // NUEVO: Método para convertir usuario a Map (para guardarlo)
   Map<String, dynamic> toJson() {
-    return {'user_id': id, 'username': username, 'email': email};
+    return {
+      'user_id': id,
+      'username': username,
+      'email': email,
+      'avatar_url': avatarUrl, // <-- AÑADIR ESTA LÍNEA
+    };
   }
 }
 

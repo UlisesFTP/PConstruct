@@ -4,7 +4,17 @@ cmake_minimum_required(VERSION 3.10)
 set(EPHEMERAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ephemeral")
 
 # Configuration provided via flutter tool.
-include(${EPHEMERAL_DIR}/generated_config.cmake)
+# Attempt to include the generated config if present; use OPTIONAL so include() won't error if the file is missing.
+include("${EPHEMERAL_DIR}/generated_config.cmake" OPTIONAL)
+
+if(NOT DEFINED FLUTTER_ROOT)
+  message(WARNING "generated_config.cmake not found in ${EPHEMERAL_DIR}; using fallback defaults. Regenerate project files with the Flutter tool if needed.")
+  # Provide minimal safe defaults to allow CMake configure to succeed; real builds may still
+  # require regenerating the ephemeral/generated_config.cmake using the Flutter tool.
+  set(FLUTTER_ROOT "" CACHE STRING "Path to the Flutter SDK")
+  set(FLUTTER_TOOL_ENVIRONMENT "" CACHE STRING "Environment variables for the Flutter tool")
+  set(FLUTTER_TARGET_PLATFORM "linux" CACHE STRING "Flutter target platform")
+endif()
 
 # TODO: Move the rest of this into files in ephemeral. See
 # https://github.com/flutter/flutter/issues/57146.

@@ -29,12 +29,8 @@ class _FeedPageState extends State<FeedPage> {
 
   final ScrollController _scrollController = ScrollController();
 
-  // NUEVO: Variable para el canal de WebSocket
   WebSocketChannel? _channel;
 
-  // NUEVO: URL del WebSocket (basada en tu ApiClient)
-  // Asegúrate de que 'localhost' sea accesible desde tu emulador/dispositivo.
-  // Si usas el emulador de Android, usa '10.0.2.2' en lugar de 'localhost'.
   final String _webSocketUrl = 'ws://localhost:8000/posts/ws/feed';
   // final String _webSocketUrl = 'ws://10.0.2.2:8000/posts/ws/feed'; // <-- Descomenta si usas emulador Android
 
@@ -90,20 +86,20 @@ class _FeedPageState extends State<FeedPage> {
       _channel!.stream.listen(
         (message) {
           print('WebSocket message received: $message');
-          // Decodificamos el mensaje JSON
           final data = jsonDecode(message);
-
-          // --- LÓGICA DE WEBSOCKET MODIFICADA ---
-          // Ya no recargamos por "like", solo por "new_post"
           if (data['event'] == 'new_post') {
-            print("FeedPage: Notificación de nuevo post recibida.");
-            // Mostramos el botón en lugar de recargar
             setState(() {
               _showNewPostsButton = true;
             });
           }
-          // (Los 'post_update' de likes/comments ya no se envían)
-          // --- FIN DE LA MODIFICACIÓN ---
+
+          if (data['event'] == 'post_update' && data['action'] == 'edit') {
+            _loadPosts();
+          }
+
+          if (data['event'] == 'post_delete') {
+            _loadPosts();
+          }
         },
         onDone: () {
           print('WebSocket channel cerrado (onDone)');
@@ -111,7 +107,6 @@ class _FeedPageState extends State<FeedPage> {
         },
         onError: (error) {
           print('WebSocket error: $error');
-          // Opcional: manejar errores de conexión
         },
       );
     } catch (e) {

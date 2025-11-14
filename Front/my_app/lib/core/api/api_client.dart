@@ -355,12 +355,6 @@ class ApiClient {
     }
   }
 
-  // =======================================================
-  // --- ¡NUEVOS MÉTODOS DEL SERVICIO DE BUILDS! ---
-  // =======================================================
-
-  /// Llama a POST /builds/
-  /// (Ruta Protegida) Crea una nueva build.
   Future<BuildRead> createBuild(BuildCreate buildData) async {
     try {
       final response = await _dio.post(
@@ -472,5 +466,42 @@ class ApiClient {
       }
     }
     throw Exception('Error de conexión. Verifica tu internet.');
+  }
+
+  Future<List<Post>> getMyPosts() async {
+    try {
+      final response = await _dio.get('/posts/me/');
+      final List<dynamic> postList = response.data as List<dynamic>;
+      return postList
+          .map((json) => Post.fromJson(json as Map<String, dynamic>))
+          .toList();
+    } on DioException catch (e) {
+      _handleDioError(e, 'Error al cargar mis posts.');
+      rethrow;
+    }
+  }
+
+  // --- NUEVO: Actualizar un post ---
+  Future<Post> updatePost(int postId, String title, String content) async {
+    try {
+      final response = await _dio.put(
+        '/posts/$postId',
+        data: {'title': title, 'content': content},
+      );
+      return Post.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      _handleDioError(e, 'Error al actualizar el post.');
+      rethrow;
+    }
+  }
+
+  // --- NUEVO: Eliminar un post ---
+  Future<void> deletePost(int postId) async {
+    try {
+      await _dio.delete('/posts/$postId');
+    } on DioException catch (e) {
+      _handleDioError(e, 'Error al eliminar el post.');
+      rethrow;
+    }
   }
 }

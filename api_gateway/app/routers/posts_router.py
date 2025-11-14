@@ -10,34 +10,63 @@ import cloudinary.api
 from fastapi import WebSocket, WebSocketDisconnect
 import websockets # Nueva dependencia necesaria
 import asyncio
+import websockets
 
 
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
+
+# --- Endpoint de "Obtener Mis Posts" ---
+@router.get("/me/")
+async def get_my_posts(request: Request, authorization: str | None = Header(None)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing token")
+
+    from app.utils.security import verify_token
+    token_data: Dict = verify_token(authorization)
+    user_id = token_data.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    headers = {"X-User-ID": str(user_id)}
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            # Apuntamos al nuevo endpoint del microservicio
+            response = await client.get(
+                f"{SERVICE_CONFIG['posts']}/posts/me/",
+                headers=headers,
+                timeout=30.0
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=e.response.json())
+        except Exception as e:
+            logger.error(f"Get my posts error: {str(e)}")
+            raise HTTPException(status_code=503, detail="Posts service unavailable")
+
+
+# --- Endpoint de "Obtener Feed General" (Modificado para no chocar con /me/) ---
 @router.get("/")
 async def get_posts(request: Request, authorization: str | None = Header(None)):
     headers = {}
     if authorization:
-        # si hay token, extraemos user_id
         from app.utils.security import verify_token
         token_data = verify_token(authorization)
         if token_data and token_data.get("sub"):
             headers["X-User-ID"] = str(token_data["sub"])
 
-    # --- Novedad: Leer query params ---
-    # Obtenemos el parámetro 'sort_by' del request original
     sort_by = request.query_params.get("sort_by", "recent")
     params = {"sort_by": sort_by}
-    # (También podríamos pasar 'skip' y 'limit' si quisiéramos paginar desde el gateway)
-    # --- Fin Novedad ---
 
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(
                 f"{SERVICE_CONFIG['posts']}/posts/",
                 headers=headers,
-                params=params, # Reenviamos los parámetros al microservicio
+                params=params,
                 timeout=30.0
             )
             response.raise_for_status()
@@ -47,6 +76,78 @@ async def get_posts(request: Request, authorization: str | None = Header(None)):
         except Exception as e:
             logger.error(f"Get posts error: {str(e)}")
             raise HTTPException(status_code=503, detail="Posts service unavailable")
+
+# --- NUEVO: Endpoint para Actualizar (Editar) un Post ---
+@router.put("/{post_id}")
+async def update_post(
+    post_id: int,
+    request: Request,
+    authorization: str | None = Header(None),
+):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing token")
+
+    from app.utils.security import verify_token
+    token_data: Dict = verify_token(authorization)
+    user_id = token_data.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    post_data = await request.json()
+    headers = {"X-User-ID": str(user_id)}
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.put(
+                f"{SERVICE_CONFIG['posts']}/posts/{post_id}",
+                json=post_data,
+                headers=headers,
+                timeout=30.0
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=e.response.json())
+        except Exception as e:
+            logger.error(f"Update post error: {str(e)}")
+            raise HTTPException(status_code=503, detail="Service unavailable")
+
+# --- NUEVO: Endpoint para Eliminar un Post ---
+@router.delete("/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_post(
+    post_id: int,
+    authorization: str | None = Header(None),
+):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing token")
+
+    from app.utils.security import verify_token
+    token_data: Dict = verify_token(authorization)
+    user_id = token_data.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    headers = {"X-User-ID": str(user_id)}
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.delete(
+                f"{SERVICE_CONFIG['posts']}/posts/{post_id}",
+                headers=headers,
+                timeout=30.0
+            )
+            response.raise_for_status()
+            return Response(status_code=response.status_code)
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=e.response.json())
+        except Exception as e:
+            logger.error(f"Delete post error: {str(e)}")
+            raise HTTPException(status_code=503, detail="Service unavailable")
+
+
+
+
+
 
 @router.post("/")
 async def create_post(

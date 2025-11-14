@@ -72,7 +72,7 @@ class _MyBuildsPageState extends State<MyBuildsPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Build eliminada exitosamente'),
-            backgroundColor: Colors.green,
+            backgroundColor: Color.fromARGB(255, 192, 26, 62),
           ),
         );
       } catch (e) {
