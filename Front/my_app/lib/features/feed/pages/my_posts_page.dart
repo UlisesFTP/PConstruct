@@ -248,8 +248,9 @@ class _MyPostCardState extends State<_MyPostCard> {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final user = authProvider.user; // Obtenemos el usuario logueado
+    final bool hasAvatar =
+        widget.post.authorAvatarUrl != null &&
+        widget.post.authorAvatarUrl!.isNotEmpty;
 
     return Center(
       child: Container(
@@ -274,21 +275,20 @@ class _MyPostCardState extends State<_MyPostCard> {
                       children: [
                         CircleAvatar(
                           radius: 24,
-                          // Usamos el avatar del usuario logueado
-                          backgroundImage: (user?.avatarUrl != null)
-                              ? NetworkImage(user!.avatarUrl!)
+                          // Usamos el avatar del post
+                          backgroundImage: hasAvatar
+                              ? NetworkImage(widget.post.authorAvatarUrl!)
                               : null,
-                          child: (user?.avatarUrl == null)
-                              ? const Icon(Icons.person)
-                              : null,
+                          child: !hasAvatar ? const Icon(Icons.person) : null,
                         ),
                         const SizedBox(width: 16),
+
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               // Usamos el username del usuario logueado
-                              user?.username ?? 'Mi Usuario',
+                              widget.post.authorUsername ?? 'Mi Usuario',
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: Colors.white,

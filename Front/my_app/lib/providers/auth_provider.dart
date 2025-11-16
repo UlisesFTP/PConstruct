@@ -75,8 +75,20 @@ class AuthProvider with ChangeNotifier {
 
   // MODIFICADO: Ahora es 'async' y guarda en SharedPreferences
   Future<void> login(Map<String, dynamic> loginResponse) async {
+    print('--- RECIBIDO EN AUTH_PROVIDER (JSON crudo) ---');
+    // Usamos jsonEncode para imprimirlo de forma legible
+    print(jsonEncode(loginResponse));
+    // --------------------------------------------------
+
     _token = loginResponse['access_token'];
     _user = User.fromJson(loginResponse['user']);
+
+    print('--- VALOR PARSEADO EN EL OBJETO User ---');
+    print('User ID: ${_user?.id}');
+    print('Username: ${_user?.username}');
+    print('Avatar URL: ${_user?.avatarUrl}');
+    print('--------------------------------------');
+    // ------------------------------------
 
     // Guardamos en el dispositivo
     final prefs = await SharedPreferences.getInstance();

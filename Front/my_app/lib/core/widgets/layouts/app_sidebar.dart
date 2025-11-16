@@ -1,8 +1,8 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:my_app/core/widgets/layouts/sidebar_menu_item.dart';
-import 'package:provider/provider.dart'; // <-- Importar Provider
-import 'package:my_app/providers/auth_provider.dart'; // <-- Importar AuthProvider
+import 'package:provider/provider.dart';
+import 'package:my_app/providers/auth_provider.dart';
 
 class AppSidebar extends StatelessWidget {
   const AppSidebar({super.key});
@@ -28,12 +28,17 @@ class AppSidebar extends StatelessWidget {
 }
 
 class SidebarContent extends StatelessWidget {
-  const SidebarContent();
+  const SidebarContent({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context);
+    final userName = authProvider.user?.username ?? 'Usuario';
+    final userEmail = authProvider.user?.email ?? '';
+
     return Stack(
       children: [
+        // Gradiente de fondo
         Positioned.fill(
           child: Container(
             decoration: BoxDecoration(
@@ -48,69 +53,155 @@ class SidebarContent extends StatelessWidget {
             ),
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.all(5.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(left: 2.5),
-                child: Row(
-                  children: [
-                    Image.asset('assets/img/PCLogoBlanco.png', height: 180),
-                    const SizedBox(width: 5),
-                  ],
-                ),
+
+        // Contenido
+        Column(
+          children: [
+            // Header con logo y info de usuario
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  // Logo
+                  Image.asset('assets/img/PCLogoBlanco.png', height: 80),
+                  const SizedBox(height: 20),
+
+                  // Info de usuario
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFF2A2A2A)),
+                    ),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 20,
+                          backgroundColor: const Color(0xFFC7384D),
+                          child: Text(
+                            userName.isNotEmpty
+                                ? userName[0].toUpperCase()
+                                : 'U',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                userName,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (userEmail.isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  userEmail,
+                                  style: const TextStyle(
+                                    color: Color(0xFFA0A0A0),
+                                    fontSize: 11,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              Expanded(
+            ),
+
+            const Divider(color: Color(0xFF2A2A2A), height: 1),
+            const SizedBox(height: 12),
+
+            // Menú principal
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Column(
                   children: [
                     SidebarMenuItem(
                       icon: Icons.person_outline,
-                      text: 'Usuario',
+                      text: 'Perfil',
                       onTap: () {
-                        Navigator.pop(context); // Cierra el drawer
+                        Navigator.pop(context);
                         Navigator.pushNamed(context, '/profile');
                       },
                     ),
                     SidebarMenuItem(
-                      icon: Icons.build_outlined,
-                      text: 'Mis builds',
+                      icon: Icons.precision_manufacturing,
+                      text: 'Mis Builds',
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.pushNamed(context, '/my-builds');
-                        // Navigator.pushNamed(context, '/my-builds');
                       },
                     ),
                     SidebarMenuItem(
                       icon: Icons.article_outlined,
-                      text: 'Mis publicaciones',
+                      text: 'Mis Publicaciones',
                       onTap: () {
-                        // <-- ¡NUEVA NAVEGACIÓN!
                         Navigator.pop(context);
                         Navigator.pushNamed(context, '/my-posts');
                       },
                     ),
                     SidebarMenuItem(
+                      icon: Icons.bookmark_outline,
+                      text: 'Guardados',
+                      onTap: () {
+                        Navigator.pop(context);
+                        // Navigator.pushNamed(context, '/saved');
+                      },
+                    ),
+
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Divider(color: Color(0xFF2A2A2A), height: 1),
+                    ),
+
+                    SidebarMenuItem(
                       icon: Icons.settings_outlined,
                       text: 'Configuración',
                       onTap: () {
-                        // <-- ¡ACTUALIZADO!
                         Navigator.pop(context);
                         Navigator.pushNamed(context, '/settings');
+                      },
+                    ),
+                    SidebarMenuItem(
+                      icon: Icons.help_outline,
+                      text: 'Ayuda',
+                      onTap: () {
+                        Navigator.pop(context);
+                        // Navigator.pushNamed(context, '/help');
                       },
                     ),
                   ],
                 ),
               ),
-              SidebarMenuItem(
+            ),
+
+            // Botón de logout
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: SidebarMenuItem(
                 icon: Icons.logout,
-                text: 'Cerrar sesión',
+                text: 'Cerrar Sesión',
+                isDanger: true, // Marca como peligroso
                 onTap: () {
-                  // <-- ¡NUEVA LÓGICA DE LOGOUT!
-                  // 1. Llama al método logout del provider
                   Provider.of<AuthProvider>(context, listen: false).logout();
-                  // 2. Navega al login y elimina todas las rutas anteriores
                   Navigator.pushNamedAndRemoveUntil(
                     context,
                     '/login',
@@ -118,9 +209,9 @@ class SidebarContent extends StatelessWidget {
                   );
                 },
               ),
-              const SizedBox(height: 8),
-            ],
-          ),
+            ),
+            const SizedBox(height: 8),
+          ],
         ),
       ],
     );

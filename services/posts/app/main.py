@@ -271,6 +271,7 @@ async def read_comments_for_post(
         author = authors_info.get(comment.user_id)
         if author:
             comment_data.author_username = author.get("username")
+            comment_data.author_avatar_url = author.get("avatar_url") # <-- AÑADE ESTA LÍNEA
         results.append(comment_data)
         
     return results
@@ -280,17 +281,33 @@ async def read_my_posts(
     skip: int = 0, 
     limit: int = 20, 
     db: AsyncSession = Depends(get_db),
-    user_id: int = Depends(get_current_user_id) # Requiere autenticación
+    user_id: int = Depends(get_current_user_id)
 ):
     """Obtiene solo los posts del usuario autenticado."""
-    # Usamos la nueva función de crud
+    
+    author_info = {}
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{USER_SERVICE_URL}/users/profiles", 
+                params={"user_ids": [user_id]}
+            )
+            response.raise_for_status()
+            if response.json():
+                author_info = response.json()[0]
+    except Exception as e:
+        print(f"Could not fetch user profile for my_posts: {e}")
+
+   
     posts_data = await crud.get_posts_by_user_id(db, user_id=user_id, skip=skip, limit=limit)
     
-    # (El enriquecimiento de autor no es necesario,
-    # pero los conteos ya vienen de la función crud)
+  
+    for post in posts_data:
+        post.author_username = author_info.get("username")
+        post.author_avatar_url = author_info.get("avatar_url")
+
             
     return posts_data
-
 
 @app.put("/posts/{post_id}", response_model=schemas.Post)
 async def update_post_endpoint(

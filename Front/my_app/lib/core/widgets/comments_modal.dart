@@ -105,20 +105,58 @@ class _CommentsModalState extends State<CommentsModal> {
                     itemCount: comments.length,
                     itemBuilder: (context, index) {
                       final comment = comments[index];
+                      final bool hasAvatar =
+                          comment.authorAvatarUrl != null &&
+                          comment.authorAvatarUrl!.isNotEmpty;
                       return ListTile(
                         leading: CircleAvatar(
-                          child: Icon(
-                            Icons.person,
-                          ), // (Usar avatar real en el futuro)
+                          radius: 20,
+                          backgroundImage: hasAvatar
+                              ? NetworkImage(comment.authorAvatarUrl!)
+                              : null,
+                          backgroundColor: hasAvatar
+                              ? const Color.fromARGB(
+                                  255,
+                                  109,
+                                  109,
+                                  109,
+                                ) // Fondo mientras carga
+                              : const Color.fromARGB(
+                                  255,
+                                  200,
+                                  74,
+                                  74,
+                                ), // Fondo del ícono
+                          child: !hasAvatar
+                              ? const Icon(
+                                  Icons.person,
+                                  size: 20,
+                                  color: Color.fromARGB(179, 0, 0, 0),
+                                )
+                              : null,
                         ),
+
                         title: Text(
                           comment.authorUsername ?? 'Usuario ${comment.userId}',
-                          style: TextStyle(fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color:
+                                Colors.white, // Asegura que el texto sea blanco
+                          ),
                         ),
-                        subtitle: Text(comment.content),
+                        subtitle: Text(
+                          comment.content,
+                          style: const TextStyle(
+                            color: Colors
+                                .white70, // Asegura que el texto sea legible
+                          ),
+                        ),
                         trailing: Text(
                           timeago.format(comment.createdAt, locale: 'es_short'),
-                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
                         ),
                       );
                     },

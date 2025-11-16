@@ -66,7 +66,7 @@ async def register_user(
 
 
 
-@app.post("/auth/login")
+@app.post("/auth/login" , response_model=schemas.LoginResponse)
 async def login_user(login_data: schemas.LoginRequest, db: AsyncSession = Depends(get_db)):
     user = await crud.authenticate_user(db, login_data.username, login_data.password)
     if not user:

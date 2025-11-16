@@ -45,6 +45,159 @@ class TopNavLinks extends StatelessWidget {
   }
 }
 
+class TopNavIcons extends StatelessWidget {
+  final bool showLabels;
+
+  const TopNavIcons({super.key, this.showLabels = true});
+
+  String _getActiveRoute(BuildContext context) {
+    return ModalRoute.of(context)?.settings.name ?? '/feed';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final activeRoute = _getActiveRoute(context);
+
+    final navItems = [
+      NavItemData(
+        icon: Icons.dynamic_feed_rounded,
+        label: 'Feed',
+        route: '/feed',
+      ),
+      NavItemData(
+        icon: Icons.memory,
+        label: 'Componentes',
+        route: '/components',
+      ),
+      NavItemData(
+        icon: Icons.precision_manufacturing,
+        label: 'Builds',
+        route: '/builds',
+      ),
+      NavItemData(icon: Icons.speed, label: 'Benchmarks', route: '/benchmarks'),
+    ];
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: navItems.map((item) {
+        final isActive = activeRoute == item.route;
+        return NavIconButton(
+          icon: item.icon,
+          label: item.label,
+          isActive: isActive,
+          showLabel: showLabels,
+          onTap: () => Navigator.pushNamed(context, item.route),
+        );
+      }).toList(),
+    );
+  }
+}
+
+class NavItemData {
+  final IconData icon;
+  final String label;
+  final String route;
+
+  NavItemData({required this.icon, required this.label, required this.route});
+}
+
+class NavIconButton extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final bool isActive;
+  final bool showLabel;
+  final VoidCallback onTap;
+
+  const NavIconButton({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.isActive,
+    required this.showLabel,
+    required this.onTap,
+  });
+
+  @override
+  State<NavIconButton> createState() => _NavIconButtonState();
+}
+
+class _NavIconButtonState extends State<NavIconButton> {
+  bool isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = widget.isActive || isHovered
+        ? theme.primaryColor
+        : const Color(0xFFA0A0A0);
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => isHovered = true),
+      onExit: (_) => setState(() => isHovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: EdgeInsets.symmetric(
+            horizontal: widget.showLabel ? 12 : 8,
+            vertical: 8,
+          ),
+          decoration: BoxDecoration(
+            color: widget.isActive
+                ? theme.primaryColor.withOpacity(0.15)
+                : (isHovered
+                      ? theme.primaryColor.withOpacity(0.08)
+                      : Colors.transparent),
+            borderRadius: BorderRadius.circular(12),
+            border: widget.isActive
+                ? Border.all(
+                    color: theme.primaryColor.withOpacity(0.3),
+                    width: 1,
+                  )
+                : null,
+          ),
+          child: widget.showLabel
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(widget.icon, size: 22, color: color),
+                    const SizedBox(width: 8),
+                    Text(
+                      widget.label,
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 14,
+                        fontWeight: widget.isActive
+                            ? FontWeight.bold
+                            : FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(widget.icon, size: 24, color: color),
+                    if (widget.isActive) ...[
+                      const SizedBox(height: 4),
+                      Container(
+                        width: 4,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: theme.primaryColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+}
+
 // NavLink ahora acepta onTap
 class NavLink extends StatefulWidget {
   final String text;

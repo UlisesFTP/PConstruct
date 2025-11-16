@@ -1,6 +1,7 @@
 // lib/features/components/pages/components_page.dart
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'dart:ui';
 import 'package:my_app/models/component.dart';
 import 'package:my_app/core/api/api_client.dart';
@@ -19,25 +20,29 @@ class _ComponentsPageState extends State<ComponentsPage>
   late Future<PaginatedComponentsResponse> _componentsFuture;
   late ApiClient _apiClient;
 
-  // --- ¡NUEVO ESTADO PARA PAGINACIÓN! ---
+  // Paginación
   int _currentPage = 1;
   int _totalItems = 0;
-  final int _pageSize = 50; // Mostraremos 50 por página
-  // ------------------------------------
+  final int _pageSize = 50;
 
-  // Estados de los filtros
+  // Filtros
   String selectedCategoria = '';
   String selectedMarca = '';
   RangeValues budgetRange = const RangeValues(0, 200000);
+  String sortBy = 'price_asc';
 
+  // Animación
   late AnimationController _animationController;
   late Animation<double> _animation;
+
+  // Control de filtros en móvil
+  bool _showFilters = false;
 
   @override
   void initState() {
     super.initState();
     _apiClient = Provider.of<ApiClient>(context, listen: false);
-    _fetchData(page: 1); // Carga la primera página
+    _fetchData(page: 1);
 
     _animationController = AnimationController(
       vsync: this,
@@ -49,10 +54,9 @@ class _ComponentsPageState extends State<ComponentsPage>
     );
   }
 
-  // --- FUNCIÓN DE CARGA DE DATOS (MODIFICADA) ---
   void _fetchData({required int page}) {
     setState(() {
-      _currentPage = page; // Actualiza la página actual
+      _currentPage = page;
       _componentsFuture = _apiClient.fetchComponents(
         page: _currentPage,
         pageSize: _pageSize,
@@ -60,9 +64,19 @@ class _ComponentsPageState extends State<ComponentsPage>
         brand: selectedMarca.isNotEmpty ? selectedMarca : null,
         minPrice: (budgetRange.start > 0) ? budgetRange.start : null,
         maxPrice: (budgetRange.end < 200000) ? budgetRange.end : null,
-        sortBy: "price_asc",
+        sortBy: sortBy,
       );
     });
+  }
+
+  void _resetFilters() {
+    setState(() {
+      selectedCategoria = '';
+      selectedMarca = '';
+      budgetRange = const RangeValues(0, 200000);
+      sortBy = 'price_asc';
+    });
+    _fetchData(page: 1);
   }
 
   @override
@@ -73,7 +87,10 @@ class _ComponentsPageState extends State<ComponentsPage>
 
   @override
   Widget build(BuildContext context) {
-    final bool isDesktop = MediaQuery.of(context).size.width >= 768;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 600;
+    final isTablet = screenWidth >= 600 && screenWidth < 900;
+    final isDesktop = screenWidth >= 900;
     final theme = Theme.of(context);
 
     return Stack(
@@ -99,302 +116,493 @@ class _ComponentsPageState extends State<ComponentsPage>
             );
           },
         ),
-        // Contenido principal
-        SingleChildScrollView(
-          padding: EdgeInsets.symmetric(
-            horizontal: isDesktop ? 32 : 24,
-            vertical: 24,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Título
-              Padding(
-                padding: EdgeInsets.only(bottom: 24.0, left: isDesktop ? 0 : 0),
-                child: Text(
-                  'Componentes',
-                  style:
-                      theme.textTheme.displaySmall?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ) ??
-                      const TextStyle(
-                        color: Colors.white,
-                        fontSize: 30,
-                        fontWeight: FontWeight.bold,
+
+        // Contenido
+        CustomScrollView(
+          slivers: [
+            // Header sticky
+            SliverAppBar(
+              floating: true,
+              snap: true,
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              expandedHeight: isMobile ? 140 : 160,
+              pinned: false,
+              flexibleSpace: LayoutBuilder(
+                builder: (context, constraints) {
+                  return FlexibleSpaceBar(
+                    background: ClipRRect(
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.3),
+                            border: const Border(
+                              bottom: BorderSide(
+                                color: Color(0xFF2A2A2A),
+                                width: 1,
+                              ),
+                            ),
+                          ),
+                          padding: EdgeInsets.symmetric(
+                            horizontal: isMobile ? 16 : (isTablet ? 24 : 32),
+                            vertical: 12,
+                          ),
+                          child: SafeArea(
+                            child: SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              'Componentes',
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: isMobile ? 22 : 28,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            FutureBuilder<
+                                              PaginatedComponentsResponse
+                                            >(
+                                              future: _componentsFuture,
+                                              builder: (context, snapshot) {
+                                                if (snapshot.hasData) {
+                                                  return Text(
+                                                    '${snapshot.data!.totalItems} productos',
+                                                    style: TextStyle(
+                                                      color: const Color(
+                                                        0xFFA0A0A0,
+                                                      ),
+                                                      fontSize: isMobile
+                                                          ? 12
+                                                          : 13,
+                                                    ),
+                                                  );
+                                                }
+                                                return const SizedBox.shrink();
+                                              },
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      // Botón de filtros en móvil
+                                      if (isMobile)
+                                        IconButton(
+                                          onPressed: () {
+                                            setState(
+                                              () =>
+                                                  _showFilters = !_showFilters,
+                                            );
+                                          },
+                                          icon: Stack(
+                                            children: [
+                                              Icon(
+                                                _showFilters
+                                                    ? Icons.filter_alt
+                                                    : Icons.filter_alt_outlined,
+                                                color: Colors.white,
+                                              ),
+                                              if (_hasActiveFilters())
+                                                Positioned(
+                                                  right: 0,
+                                                  top: 0,
+                                                  child: Container(
+                                                    width: 8,
+                                                    height: 8,
+                                                    decoration: BoxDecoration(
+                                                      color: theme.primaryColor,
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                          tooltip: 'Filtros',
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 10),
+                                  // Ordenamiento rápido
+                                  _buildQuickSort(theme, isMobile),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                ),
-              ),
-
-              // Sección de filtros
-              _buildFiltersSection(theme),
-              const SizedBox(height: 32),
-
-              // --- FUTURE BUILDER (MODIFICADO) ---
-              FutureBuilder<PaginatedComponentsResponse>(
-                future: _componentsFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(64.0),
-                        child: CircularProgressIndicator(),
-                      ),
-                    );
-                  }
-
-                  if (snapshot.hasError) {
-                    return _buildErrorState(theme, snapshot.error.toString());
-                  }
-
-                  if (!snapshot.hasData || snapshot.data!.components.isEmpty) {
-                    return _buildEmptyState(theme);
-                  }
-
-                  // ¡Datos reales!
-                  final response = snapshot.data!;
-                  final components = response.components;
-                  // Actualiza el total de items
-                  _totalItems = response.totalItems;
-                  final totalPages = (_totalItems / _pageSize).ceil();
-
-                  return Column(
-                    children: [
-                      // Cuadrícula de componentes
-                      _buildComponentsGrid(components, isDesktop, (component) {
-                        Navigator.pushNamed(
-                          context,
-                          '/component-detail',
-                          arguments: component.id,
-                        );
-                      }),
-                      const SizedBox(height: 32),
-                      // --- ¡NUEVO WIDGET DE PAGINACIÓN! ---
-                      _buildPaginationControls(totalPages),
-                    ],
+                    ),
                   );
                 },
               ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  // --- ¡NUEVO WIDGET DE CONTROLES DE PAGINACIÓN! ---
-  Widget _buildPaginationControls(int totalPages) {
-    if (totalPages <= 1)
-      return const SizedBox.shrink(); // No mostrar si solo hay 1 página
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        // Botón Anterior
-        ElevatedButton(
-          onPressed: _currentPage <= 1
-              ? null
-              : () {
-                  _fetchData(page: _currentPage - 1);
-                },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Theme.of(context).primaryColor,
-            disabledBackgroundColor: Colors.grey[800],
-          ),
-          child: const Text(
-            'Anterior',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-          ),
-        ),
-
-        // Indicador de página
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            'Página $_currentPage / $totalPages',
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
             ),
-          ),
-        ),
 
-        // Botón Siguiente
-        ElevatedButton(
-          onPressed: _currentPage >= totalPages
-              ? null
-              : () {
-                  _fetchData(page: _currentPage + 1);
-                },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Theme.of(context).primaryColor,
-            disabledBackgroundColor: Colors.grey[800],
-          ),
-          child: const Text(
-            'Siguiente',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-          ),
+            // Contenido principal
+            SliverPadding(
+              padding: EdgeInsets.symmetric(
+                horizontal: isMobile ? 16 : (isTablet ? 24 : 32),
+                vertical: 16,
+              ),
+              sliver: SliverList(
+                delegate: SliverChildListDelegate([
+                  // Filtros (colapsables en móvil)
+                  if (isMobile && _showFilters || !isMobile) ...[
+                    _buildFiltersSection(theme, isMobile, isTablet),
+                    const SizedBox(height: 24),
+                  ],
+
+                  // Grid de componentes
+                  FutureBuilder<PaginatedComponentsResponse>(
+                    future: _componentsFuture,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return _buildLoadingSkeleton(isMobile, isTablet);
+                      }
+
+                      if (snapshot.hasError) {
+                        return _buildErrorState(
+                          theme,
+                          snapshot.error.toString(),
+                        );
+                      }
+
+                      if (!snapshot.hasData ||
+                          snapshot.data!.components.isEmpty) {
+                        return _buildEmptyState(theme);
+                      }
+
+                      final response = snapshot.data!;
+                      final components = response.components;
+                      _totalItems = response.totalItems;
+                      final totalPages = (_totalItems / _pageSize).ceil();
+
+                      return Column(
+                        children: [
+                          _buildComponentsGrid(
+                            components,
+                            isMobile,
+                            isTablet,
+                            isDesktop,
+                          ),
+                          const SizedBox(height: 32),
+                          _buildPaginationControls(totalPages, isMobile),
+                        ],
+                      );
+                    },
+                  ),
+                ]),
+              ),
+            ),
+          ],
         ),
       ],
     );
   }
 
-  Widget _buildFiltersSection(ThemeData theme) {
-    return _GlassmorphismCard(
-      child: Wrap(
-        spacing: 16,
-        runSpacing: 16,
-        alignment: WrapAlignment.start,
+  bool _hasActiveFilters() {
+    return selectedCategoria.isNotEmpty ||
+        selectedMarca.isNotEmpty ||
+        budgetRange.start > 0 ||
+        budgetRange.end < 200000;
+  }
+
+  Widget _buildQuickSort(ThemeData theme, bool isMobile) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
         children: [
-          // Filtro de Categoría
-          _buildFilterDropdown(
-            theme: theme,
-            label: 'Categoría',
-            value: selectedCategoria,
-            // --- ¡INICIO DE CORRECCIÓN! ---
-            // Nombres que coinciden con la DB del scraper
-            items: [
-              '',
-              'CPU',
-              'GPU',
-              'Motherboard',
-              'PSU',
-              'RAM',
-              'SSD',
-              'HDD',
-              'Gabinete',
-              'Cooling',
-              'Ventiladores',
-              'Laptop',
-              'Laptop_Gamer',
-            ],
-            // Etiquetas amigables para el usuario
-            itemLabels: [
-              'Todas',
-              'CPU',
-              'GPU',
-              'Motherboard',
-              'PSU',
-              'RAM',
-              'Almacenamiento (SSD)',
-              'Almacenamiento (HDD)',
-              'Gabinete',
-              'Enfriamiento',
-              'Ventiladores',
-              'Laptop',
-              'Laptop Gamer',
-            ],
-            // --- FIN DE CORRECCIÓN! ---
-            onChanged: (value) {
-              setState(() => selectedCategoria = value ?? '');
-              _fetchData(page: 1); // Reinicia a la página 1 al filtrar
+          _SortChip(
+            label: 'Precio: Menor a Mayor',
+            isSelected: sortBy == 'price_asc',
+            onTap: () {
+              setState(() => sortBy = 'price_asc');
+              _fetchData(page: 1);
             },
-            minWidth: 180,
           ),
-
-          // Filtro de Marca
-          _buildFilterDropdown(
-            theme: theme,
-            label: 'Marca',
-            value: selectedMarca,
-            items: [
-              '',
-              'Intel',
-              'AMD',
-              'NVIDIA',
-              'Gigabyte',
-              'MSI',
-              'ASUS',
-              'Corsair',
-              'Samsung',
-              'Kingston',
-              'Western Digital',
-              'Seagate',
-              'EVGA',
-              'Noctua',
-              'Be Quiet!',
-              'NZXT',
-              'Thermaltake',
-              'Cooler Master',
-              'Lian Li',
-              'HP',
-              'Dell',
-              'Lenovo',
-              'Acer',
-              'Razer',
-            ],
-            itemLabels: [
-              'Todas',
-              'Intel',
-              'AMD',
-              'NVIDIA',
-              'Gigabyte',
-              'MSI',
-              'ASUS',
-              'Corsair',
-              'Samsung',
-              'Kingston',
-              'Western Digital',
-              'Seagate',
-              'EVGA',
-              'Noctua',
-              'Be Quiet!',
-              'NZXT',
-              'Thermaltake',
-              'Cooler Master',
-              'Lian Li',
-              'HP',
-              'Dell',
-              'Lenovo',
-              'Acer',
-              'Razer',
-            ],
-            onChanged: (value) {
-              setState(() => selectedMarca = value ?? '');
-              _fetchData(page: 1); // Reinicia a la página 1 al filtrar
+          const SizedBox(width: 8),
+          _SortChip(
+            label: 'Precio: Mayor a Menor',
+            isSelected: sortBy == 'price_desc',
+            onTap: () {
+              setState(() => sortBy = 'price_desc');
+              _fetchData(page: 1);
             },
-            minWidth: 150,
           ),
+          const SizedBox(width: 8),
+          _SortChip(
+            label: 'Más Recientes',
+            isSelected: sortBy == 'newest',
+            onTap: () {
+              setState(() => sortBy = 'newest');
+              _fetchData(page: 1);
+            },
+          ),
+        ],
+      ),
+    );
+  }
 
-          // Filtro de Presupuesto
-          ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 200, maxWidth: 300),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildFiltersSection(ThemeData theme, bool isMobile, bool isTablet) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      child: _GlassmorphismCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // --- ¡INICIO DE CORRECCIÓN! ---
-                Text(
-                  'Presupuesto (MXN): \$${budgetRange.start.toInt()} - \$${budgetRange.end.toInt()}',
-                  style:
-                      theme.textTheme.labelMedium?.copyWith(
-                        color: theme.colorScheme.secondary,
-                      ) ??
-                      TextStyle(
-                        color: theme.colorScheme.secondary,
-                        fontSize: 12,
+                Row(
+                  children: [
+                    Icon(
+                      Icons.tune,
+                      color: theme.primaryColor,
+                      size: isMobile ? 20 : 24,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Filtros',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: isMobile ? 16 : 18,
+                        fontWeight: FontWeight.bold,
                       ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
+                if (_hasActiveFilters())
+                  TextButton.icon(
+                    onPressed: _resetFilters,
+                    icon: const Icon(Icons.clear, size: 18),
+                    label: const Text('Limpiar'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: theme.primaryColor,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Divider(color: Color(0xFF2A2A2A)),
+            const SizedBox(height: 16),
+
+            // Filtros en layout responsive
+            if (isMobile)
+              Column(
+                children: [
+                  _buildCategoryFilter(theme),
+                  const SizedBox(height: 16),
+                  _buildBrandFilter(theme),
+                  const SizedBox(height: 16),
+                  _buildBudgetFilter(theme),
+                ],
+              )
+            else
+              Wrap(
+                spacing: 16,
+                runSpacing: 16,
+                children: [
+                  _buildCategoryFilter(theme),
+                  _buildBrandFilter(theme),
+                  _buildBudgetFilter(theme),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryFilter(ThemeData theme) {
+    return _FilterDropdown(
+      theme: theme,
+      label: 'Categoría',
+      value: selectedCategoria,
+      icon: Icons.category_outlined,
+      items: const [
+        '',
+        'CPU',
+        'GPU',
+        'Motherboard',
+        'PSU',
+        'RAM',
+        'SSD',
+        'HDD',
+        'Gabinete',
+        'Cooling',
+        'Ventiladores',
+        'Laptop',
+        'Laptop_Gamer',
+      ],
+      itemLabels: const [
+        'Todas las categorías',
+        'CPU',
+        'GPU',
+        'Motherboard',
+        'PSU',
+        'RAM',
+        'SSD',
+        'HDD',
+        'Gabinete',
+        'Enfriamiento',
+        'Ventiladores',
+        'Laptop',
+        'Laptop Gamer',
+      ],
+      onChanged: (value) {
+        setState(() => selectedCategoria = value ?? '');
+        _fetchData(page: 1);
+      },
+    );
+  }
+
+  Widget _buildBrandFilter(ThemeData theme) {
+    return _FilterDropdown(
+      theme: theme,
+      label: 'Marca',
+      value: selectedMarca,
+      icon: Icons.business_outlined,
+      items: const [
+        '',
+        'Intel',
+        'AMD',
+        'NVIDIA',
+        'Gigabyte',
+        'MSI',
+        'ASUS',
+        'Corsair',
+        'Samsung',
+        'Kingston',
+        'Western Digital',
+        'Seagate',
+        'EVGA',
+        'Noctua',
+        'Be Quiet!',
+        'NZXT',
+        'Thermaltake',
+        'Cooler Master',
+        'Lian Li',
+        'HP',
+        'Dell',
+        'Lenovo',
+        'Acer',
+        'Razer',
+      ],
+      itemLabels: const [
+        'Todas las marcas',
+        'Intel',
+        'AMD',
+        'NVIDIA',
+        'Gigabyte',
+        'MSI',
+        'ASUS',
+        'Corsair',
+        'Samsung',
+        'Kingston',
+        'Western Digital',
+        'Seagate',
+        'EVGA',
+        'Noctua',
+        'Be Quiet!',
+        'NZXT',
+        'Thermaltake',
+        'Cooler Master',
+        'Lian Li',
+        'HP',
+        'Dell',
+        'Lenovo',
+        'Acer',
+        'Razer',
+      ],
+      onChanged: (value) {
+        setState(() => selectedMarca = value ?? '');
+        _fetchData(page: 1);
+      },
+    );
+  }
+
+  Widget _buildBudgetFilter(ThemeData theme) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 280, maxWidth: 350),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.attach_money,
+                size: 18,
+                color: theme.colorScheme.secondary,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                'Presupuesto',
+                style: TextStyle(
+                  color: theme.colorScheme.secondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF2A2A2A)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '\$${budgetRange.start.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')} MXN',
+                      style: TextStyle(
+                        color: theme.primaryColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    Text(
+                      '\$${budgetRange.end.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')} MXN',
+                      style: TextStyle(
+                        color: theme.primaryColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
                 SliderTheme(
                   data: SliderTheme.of(context).copyWith(
                     activeTrackColor: theme.primaryColor,
                     inactiveTrackColor: theme.dividerColor.withOpacity(0.5),
                     thumbColor: theme.primaryColor,
                     overlayColor: theme.primaryColor.withOpacity(0.2),
-                    trackHeight: 2.0,
+                    trackHeight: 3.0,
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 8,
+                    ),
                   ),
                   child: RangeSlider(
                     values: budgetRange,
                     min: 0,
                     max: 200000,
-                    divisions: 50, // 25000 / 50 = 500 pesos por división
-                    labels: RangeLabels(
-                      '\$${budgetRange.start.toInt()}',
-                      '\$${budgetRange.end.toInt()}',
-                    ),
+                    divisions: 50,
                     onChanged: (values) => setState(() => budgetRange = values),
-                    onChangeEnd: (values) =>
-                        _fetchData(page: 1), // Reinicia a página 1
+                    onChangeEnd: (values) => _fetchData(page: 1),
                   ),
                 ),
               ],
@@ -405,39 +613,335 @@ class _ComponentsPageState extends State<ComponentsPage>
     );
   }
 
-  // (Helper _buildFilterDropdown se mantiene igual)
-  Widget _buildFilterDropdown({
-    required ThemeData theme,
-    required String label,
-    required String value,
-    required List<String> items,
-    required List<String> itemLabels,
-    required ValueChanged<String?> onChanged,
-    double minWidth = 150,
-  }) {
+  Widget _buildLoadingSkeleton(bool isMobile, bool isTablet) {
+    final crossAxisCount = isMobile ? 1 : (isTablet ? 2 : 3);
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossAxisCount,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+        childAspectRatio: isMobile ? 1.2 : 0.85,
+      ),
+      itemCount: 6,
+      itemBuilder: (context, index) => const _SkeletonCard(),
+    );
+  }
+
+  Widget _buildComponentsGrid(
+    List<ComponentCard> components,
+    bool isMobile,
+    bool isTablet,
+    bool isDesktop,
+  ) {
+    final crossAxisCount = isMobile ? 1 : (isTablet ? 2 : 3);
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossAxisCount,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+        childAspectRatio: isMobile ? 1.2 : 0.85,
+      ),
+      itemCount: components.length,
+      itemBuilder: (context, index) {
+        final component = components[index];
+        return ComponentCardWidget(
+          component: component,
+          onTap: () {
+            Navigator.pushNamed(
+              context,
+              '/component-detail',
+              arguments: component.id,
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildPaginationControls(int totalPages, bool isMobile) {
+    if (totalPages <= 1) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Primer página
+          IconButton(
+            onPressed: _currentPage <= 1 ? null : () => _fetchData(page: 1),
+            icon: const Icon(Icons.first_page),
+            color: Colors.white,
+            disabledColor: Colors.grey[700],
+            tooltip: 'Primera página',
+          ),
+
+          // Página anterior
+          IconButton(
+            onPressed: _currentPage <= 1
+                ? null
+                : () => _fetchData(page: _currentPage - 1),
+            icon: const Icon(Icons.chevron_left),
+            color: Colors.white,
+            disabledColor: Colors.grey[700],
+            tooltip: 'Anterior',
+          ),
+
+          // Indicador de página
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: Theme.of(context).primaryColor.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: Theme.of(context).primaryColor.withOpacity(0.3),
+              ),
+            ),
+            child: Text(
+              isMobile
+                  ? '$_currentPage / $totalPages'
+                  : 'Página $_currentPage de $totalPages',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+          ),
+
+          // Página siguiente
+          IconButton(
+            onPressed: _currentPage >= totalPages
+                ? null
+                : () => _fetchData(page: _currentPage + 1),
+            icon: const Icon(Icons.chevron_right),
+            color: Colors.white,
+            disabledColor: Colors.grey[700],
+            tooltip: 'Siguiente',
+          ),
+
+          // Última página
+          IconButton(
+            onPressed: _currentPage >= totalPages
+                ? null
+                : () => _fetchData(page: totalPages),
+            icon: const Icon(Icons.last_page),
+            color: Colors.white,
+            disabledColor: Colors.grey[700],
+            tooltip: 'Última página',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(ThemeData theme) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 80, horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: theme.primaryColor.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.search_off,
+                size: 64,
+                color: theme.primaryColor,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'No se encontraron componentes',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Intenta ajustar los filtros o el presupuesto.',
+              style: TextStyle(color: const Color(0xFFA0A0A0), fontSize: 14),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _resetFilters,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Limpiar filtros'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: theme.primaryColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(ThemeData theme, String error) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 80, horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.cloud_off, size: 64, color: Colors.red),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Error al cargar componentes',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              error,
+              style: const TextStyle(color: Color(0xFFA0A0A0), fontSize: 14),
+              textAlign: TextAlign.center,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () => _fetchData(page: _currentPage),
+              icon: const Icon(Icons.refresh),
+              label: const Text('Reintentar'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: theme.primaryColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ==========================================
+// WIDGETS AUXILIARES
+// ==========================================
+
+class _SortChip extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _SortChip({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? theme.primaryColor.withOpacity(0.2)
+              : Colors.black.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? theme.primaryColor : const Color(0xFF2A2A2A),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? theme.primaryColor : Colors.white,
+            fontSize: 13,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterDropdown extends StatelessWidget {
+  final ThemeData theme;
+  final String label;
+  final String value;
+  final IconData icon;
+  final List<String> items;
+  final List<String> itemLabels;
+  final ValueChanged<String?> onChanged;
+
+  const _FilterDropdown({
+    required this.theme,
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.items,
+    required this.itemLabels,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return ConstrainedBox(
-      constraints: BoxConstraints(minWidth: minWidth),
+      constraints: const BoxConstraints(minWidth: 200, maxWidth: 280),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            label,
-            style:
-                theme.textTheme.labelMedium?.copyWith(
+          Row(
+            children: [
+              Icon(icon, size: 18, color: theme.colorScheme.secondary),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
                   color: theme.colorScheme.secondary,
-                ) ??
-                TextStyle(color: theme.colorScheme.secondary, fontSize: 12),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           Container(
-            height: 48,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
-              color:
-                  theme.inputDecorationTheme.fillColor ?? Colors.grey.shade900,
+              color: Colors.black.withOpacity(0.2),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.transparent),
+              border: Border.all(color: const Color(0xFF2A2A2A)),
             ),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
@@ -448,17 +952,12 @@ class _ComponentsPageState extends State<ComponentsPage>
                   Icons.arrow_drop_down,
                   color: theme.colorScheme.secondary,
                 ),
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: Colors.white,
-                ),
+                style: const TextStyle(color: Colors.white, fontSize: 14),
                 items: List.generate(items.length, (index) {
                   return DropdownMenuItem(
                     value: items[index],
                     child: Text(
                       itemLabels[index],
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: Colors.white,
-                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                   );
@@ -471,299 +970,357 @@ class _ComponentsPageState extends State<ComponentsPage>
       ),
     );
   }
+}
 
-  // (Widget _buildComponentsGrid se mantiene igual)
-  Widget _buildComponentsGrid(
-    List<ComponentCard> components,
-    bool isDesktop,
-    Function(ComponentCard) onTapped,
-  ) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: isDesktop
-            ? 3
-            : (MediaQuery.of(context).size.width > 600 ? 2 : 1),
-        crossAxisSpacing: 24,
-        mainAxisSpacing: 24,
-        childAspectRatio: 1.1, // Ajustado para incluir la imagen
-      ),
-      itemCount: components.length,
-      itemBuilder: (context, index) {
-        final component = components[index];
-        return InkWell(
-          onTap: () => onTapped(component),
-          borderRadius: BorderRadius.circular(12.0),
-          child: ComponentCardWidget(component: component),
+class _SkeletonCard extends StatefulWidget {
+  const _SkeletonCard();
+
+  @override
+  State<_SkeletonCard> createState() => _SkeletonCardState();
+}
+
+class _SkeletonCardState extends State<_SkeletonCard>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat();
+    _animation = Tween<double>(begin: 0.3, end: 0.6).animate(_controller);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return _GlassmorphismCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Imagen skeleton
+              Container(
+                height: 140,
+                decoration: BoxDecoration(
+                  color: Colors.grey[800]!.withOpacity(_animation.value),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Categoría skeleton
+              Container(
+                width: 80,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: Colors.grey[800]!.withOpacity(_animation.value),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Nombre skeleton
+              Container(
+                width: double.infinity,
+                height: 16,
+                decoration: BoxDecoration(
+                  color: Colors.grey[800]!.withOpacity(_animation.value),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                width: 120,
+                height: 14,
+                decoration: BoxDecoration(
+                  color: Colors.grey[800]!.withOpacity(_animation.value),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+              ),
+              const Spacer(),
+              // Precio skeleton
+              Container(
+                width: 100,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: Colors.grey[800]!.withOpacity(_animation.value),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ],
+          ),
         );
       },
     );
   }
-
-  // (Widget _buildEmptyState se mantiene igual)
-  Widget _buildEmptyState(ThemeData theme) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 64, horizontal: 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.search_off,
-              size: 64,
-              color: theme.colorScheme.secondary.withOpacity(0.5),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No se encontraron componentes',
-              style:
-                  theme.textTheme.titleMedium?.copyWith(
-                    color: theme.colorScheme.secondary,
-                  ) ??
-                  TextStyle(color: theme.colorScheme.secondary, fontSize: 16),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Intenta ajustar los filtros o la búsqueda.',
-              style:
-                  theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.secondary.withOpacity(0.7),
-                  ) ??
-                  TextStyle(
-                    color: theme.colorScheme.secondary.withOpacity(0.7),
-                    fontSize: 12,
-                  ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // (Widget _buildErrorState se mantiene igual)
-  Widget _buildErrorState(ThemeData theme, String error) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 64, horizontal: 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.cloud_off,
-              size: 64,
-              color: theme.primaryColor.withOpacity(0.7),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Error al cargar componentes',
-              style:
-                  theme.textTheme.titleMedium?.copyWith(
-                    color: theme.colorScheme.secondary,
-                  ) ??
-                  TextStyle(color: theme.colorScheme.secondary, fontSize: 16),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              error,
-              style:
-                  theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.secondary.withOpacity(0.7),
-                  ) ??
-                  TextStyle(
-                    color: theme.colorScheme.secondary.withOpacity(0.7),
-                    fontSize: 12,
-                  ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
-// (Widget ComponentCardWidget se mantiene igual)
-class ComponentCardWidget extends StatelessWidget {
-  final ComponentCard component;
+// ==========================================
+// COMPONENT CARD WIDGET (MEJORADO)
+// ==========================================
 
-  const ComponentCardWidget({super.key, required this.component});
+class ComponentCardWidget extends StatefulWidget {
+  final ComponentCard component;
+  final VoidCallback onTap;
+
+  const ComponentCardWidget({
+    super.key,
+    required this.component,
+    required this.onTap,
+  });
+
+  @override
+  State<ComponentCardWidget> createState() => _ComponentCardWidgetState();
+}
+
+class _ComponentCardWidgetState extends State<ComponentCardWidget> {
+  bool _isHovered = false;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return _GlassmorphismCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          // --- ¡INICIO DE CORRECCIÓN ESTÉTICA! ---
-          if (component.imageUrl != null)
-            // 1. Añadimos ClipRRect para redondear las esquinas
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8.0),
-              child: Container(
-                // 2. Fondo sutil para que 'contain' se vea bien
-                color: Colors.black.withOpacity(0.2),
-                height: 120, // Altura fija
-                width: double.infinity,
-                child: Image.network(
-                  component.imageUrl!,
-                  height: 120,
-                  width: double.infinity,
-                  // 3. ¡CAMBIO PRINCIPAL!
-                  fit: BoxFit.contain, // En lugar de BoxFit.cover
-                  // Placeholder mientras carga
-                  loadingBuilder: (context, child, progress) {
-                    return progress == null
-                        ? child
-                        : Center(
-                            child: CircularProgressIndicator(
-                              value: progress.expectedTotalBytes != null
-                                  ? progress.cumulativeBytesLoaded /
-                                        progress.expectedTotalBytes!
-                                  : null,
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: AnimatedScale(
+        scale: _isHovered ? 1.02 : 1.0,
+        duration: const Duration(milliseconds: 200),
+        child: InkWell(
+          onTap: widget.onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: _GlassmorphismCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Imagen del componente
+                Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        height: 140,
+                        width: double.infinity,
+                        color: Colors.black.withOpacity(0.2),
+                        child: widget.component.imageUrl != null
+                            ? Image.network(
+                                widget.component.imageUrl!,
+                                fit: BoxFit.contain,
+                                loadingBuilder: (context, child, progress) {
+                                  if (progress == null) return child;
+                                  return Center(
+                                    child: CircularProgressIndicator(
+                                      value: progress.expectedTotalBytes != null
+                                          ? progress.cumulativeBytesLoaded /
+                                                progress.expectedTotalBytes!
+                                          : null,
+                                      color: theme.primaryColor,
+                                      strokeWidth: 2,
+                                    ),
+                                  );
+                                },
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Center(
+                                    child: Icon(
+                                      Icons.broken_image_outlined,
+                                      color: Colors.grey[700],
+                                      size: 48,
+                                    ),
+                                  );
+                                },
+                              )
+                            : Center(
+                                child: Icon(
+                                  Icons.memory,
+                                  color: Colors.grey[700],
+                                  size: 48,
+                                ),
+                              ),
+                      ),
+                    ),
+                    // Badge de categoría
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: theme.primaryColor.withOpacity(0.9),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          widget.component.category,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 16),
+
+                // Información del componente
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Nombre
+                      Text(
+                        widget.component.name,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          height: 1.3,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 6),
+
+                      // Marca
+                      if (widget.component.brand != null)
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.business,
+                              size: 14,
+                              color: const Color(0xFFA0A0A0),
                             ),
-                          );
-                  },
-                  // Error si no puede cargar
-                  errorBuilder: (context, error, stackTrace) => Icon(
-                    Icons.broken_image,
-                    color: Colors.grey[700],
-                    size: 48,
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                widget.component.brand!,
+                                style: const TextStyle(
+                                  color: Color(0xFFA0A0A0),
+                                  fontSize: 13,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+
+                      const Spacer(),
+
+                      const Divider(color: Color(0xFF2A2A2A), height: 16),
+
+                      // Precio y tienda
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (widget.component.price != null) ...[
+                                  Text(
+                                    NumberFormat().format(
+                                      widget.component.price!.round(),
+                                    ),
+                                    style: TextStyle(
+                                      color: theme.primaryColor,
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'MXN',
+                                    style: TextStyle(
+                                      color: theme.primaryColor.withOpacity(
+                                        0.7,
+                                      ),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ] else
+                                  const Text(
+                                    'Precio no disponible',
+                                    style: TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+
+                          // Icono de tienda
+                          if (widget.component.store != null)
+                            Tooltip(
+                              message: widget.component.store!,
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.3),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: const Color(0xFF2A2A2A),
+                                  ),
+                                ),
+                                child: Icon(
+                                  Icons.store,
+                                  size: 18,
+                                  color: theme.primaryColor,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-              ),
-            )
-          else
-            Container(
-              height: 120,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: Colors.grey[850],
-                borderRadius: BorderRadius.circular(8.0), // Redondear también
-              ),
-              child: Icon(
-                Icons.no_photography,
-                color: Colors.grey[700],
-                size: 48,
-              ),
+              ],
             ),
-
-          const SizedBox(height: 16),
-          // --- FIN DE CORRECCIÓN! ---
-
-          // Info Superior
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                component.category,
-                style:
-                    theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.secondary,
-                    ) ??
-                    TextStyle(color: theme.colorScheme.secondary, fontSize: 12),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                component.name,
-                style:
-                    theme.textTheme.titleMedium?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ) ??
-                    const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                component.brand ?? 'Sin marca',
-                style:
-                    theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.secondary,
-                    ) ??
-                    TextStyle(color: theme.colorScheme.secondary, fontSize: 14),
-              ),
-            ],
           ),
-          const SizedBox(height: 16),
-          // Info Inferior
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                component.price != null
-                    ? '\$${component.price!.toStringAsFixed(0)} MXN'
-                    : 'No disponible',
-                style:
-                    theme.textTheme.headlineSmall?.copyWith(
-                      color: component.price != null
-                          ? theme.primaryColor
-                          : Colors.grey,
-                      fontWeight: FontWeight.bold,
-                    ) ??
-                    TextStyle(
-                      color: component.price != null
-                          ? theme.primaryColor
-                          : Colors.grey,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Disponible en: ${component.store ?? 'N/A'}',
-                style:
-                    theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.secondary.withOpacity(0.8),
-                    ) ??
-                    TextStyle(
-                      color: theme.colorScheme.secondary.withOpacity(0.8),
-                      fontSize: 12,
-                    ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }
 }
 
-// (Widget _GlassmorphismCard se mantiene igual)
+// ==========================================
+// GLASSMORPHISM CARD
+// ==========================================
+
 class _GlassmorphismCard extends StatelessWidget {
   final Widget child;
+
   const _GlassmorphismCard({required this.child});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return ClipRRect(
-      borderRadius: BorderRadius.circular(12.0),
+      borderRadius: BorderRadius.circular(16),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Container(
           decoration: BoxDecoration(
-            color:
-                (theme.cardColor == Colors.transparent
-                        ? theme.colorScheme.surface
-                        : theme.cardColor)
-                    .withOpacity(0.7),
-            borderRadius: BorderRadius.circular(12.0),
-            border: Border.all(color: theme.dividerColor.withOpacity(0.5)),
+            color: const Color.fromRGBO(28, 28, 28, 0.7),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFF2A2A2A), width: 1),
           ),
-          padding: const EdgeInsets.all(24.0),
+          padding: const EdgeInsets.all(16),
           child: child,
         ),
       ),

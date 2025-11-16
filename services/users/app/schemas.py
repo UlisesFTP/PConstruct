@@ -72,3 +72,16 @@ class UserSummary(BaseModel):
 
     class Config:
         orm_mode = True
+        
+        
+
+class LoginResponse(BaseModel):
+    """
+    Schema para la respuesta completa del endpoint de login.
+    """
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse  # <-- LA CLAVE: Usamos UserResponse que tiene orm_mode
+
+    class Config:
+        orm_mode = True # Aunque el principal es el de UserResponse, no hace daño

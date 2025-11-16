@@ -15,7 +15,7 @@ class Comment(CommentBase):
     post_id: int
     created_at: datetime
     author_username: Optional[str] = None
-
+    author_avatar_url: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
 # --- Esquemas para Likes ---

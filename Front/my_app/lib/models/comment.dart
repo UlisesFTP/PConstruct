@@ -5,6 +5,7 @@ class Comment {
   final String content;
   final DateTime createdAt;
   final String? authorUsername;
+  final String? authorAvatarUrl;
 
   Comment({
     required this.id,
@@ -13,6 +14,7 @@ class Comment {
     required this.content,
     required this.createdAt,
     this.authorUsername,
+    this.authorAvatarUrl,
   });
 
   factory Comment.fromJson(Map<String, dynamic> json) {
@@ -23,6 +25,7 @@ class Comment {
       content: json['content'],
       createdAt: DateTime.parse(json['created_at']),
       authorUsername: json['author_username'],
+      authorAvatarUrl: json['author_avatar_url'],
     );
   }
 }
