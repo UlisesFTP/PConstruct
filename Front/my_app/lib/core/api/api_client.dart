@@ -181,6 +181,30 @@ class ApiClient {
     }
   }
 
+  Future<Map<String, dynamic>> updateUser({
+    String? name,
+    String? username,
+    String? avatarUrl,
+  }) async {
+    try {
+      final Map<String, dynamic> data = {};
+      if (name != null) data['name'] = name;
+      if (username != null) data['username'] = username;
+      if (avatarUrl != null) data['avatar_url'] = avatarUrl;
+
+      final response = await _dio.patch(
+        '/users/me', // Llama al endpoint del gateway
+        data: data,
+      );
+
+      // Devuelve los datos del usuario actualizado (UserResponse)
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      _handleDioError(e, 'Error al actualizar el perfil.');
+      rethrow;
+    }
+  }
+
   // --- MÉTODOS DE POSTS Y BÚSQUEDA (Sin cambios) ---
   Future<List<Post>> getPosts() async {
     try {

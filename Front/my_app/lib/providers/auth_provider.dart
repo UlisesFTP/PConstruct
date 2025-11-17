@@ -8,11 +8,13 @@ class User {
   final String username;
   final String email;
   final String? avatarUrl;
+  final String? name;
   User({
     required this.id,
     required this.username,
     required this.email,
     this.avatarUrl,
+    this.name,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -21,6 +23,7 @@ class User {
       username: json['username'],
       email: json['email'],
       avatarUrl: json['avatar_url'],
+      name: json['name'],
     );
   }
 
@@ -29,7 +32,8 @@ class User {
       'user_id': id,
       'username': username,
       'email': email,
-      'avatar_url': avatarUrl, // <-- AÑADIR ESTA LÍNEA
+      'avatar_url': avatarUrl,
+      'name': name,
     };
   }
 }
@@ -75,20 +79,10 @@ class AuthProvider with ChangeNotifier {
 
   // MODIFICADO: Ahora es 'async' y guarda en SharedPreferences
   Future<void> login(Map<String, dynamic> loginResponse) async {
-    print('--- RECIBIDO EN AUTH_PROVIDER (JSON crudo) ---');
-    // Usamos jsonEncode para imprimirlo de forma legible
-    print(jsonEncode(loginResponse));
     // --------------------------------------------------
 
     _token = loginResponse['access_token'];
     _user = User.fromJson(loginResponse['user']);
-
-    print('--- VALOR PARSEADO EN EL OBJETO User ---');
-    print('User ID: ${_user?.id}');
-    print('Username: ${_user?.username}');
-    print('Avatar URL: ${_user?.avatarUrl}');
-    print('--------------------------------------');
-    // ------------------------------------
 
     // Guardamos en el dispositivo
     final prefs = await SharedPreferences.getInstance();
@@ -110,5 +104,24 @@ class AuthProvider with ChangeNotifier {
     await prefs.remove('user');
 
     notifyListeners();
+  }
+
+  Future<void> updateUser(Map<String, dynamic> updatedUserJson) async {
+    if (_user == null) return; // No se puede actualizar si no hay usuario
+
+    // Parsea la respuesta del backend
+    final updatedUser = User.fromJson(updatedUserJson);
+    _user = updatedUser; // Actualiza el usuario en memoria
+
+    // Vuelve a guardar en SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('user', jsonEncode(updatedUserJson));
+
+    print('--- AuthProvider: Usuario actualizado ---');
+    print('Nuevo Username: ${_user?.username}');
+    print('Nuevo Avatar URL: ${_user?.avatarUrl}');
+    print('-----------------------------------------');
+
+    notifyListeners(); // Notifica a la UI (ProfileHeader) del cambio
   }
 }

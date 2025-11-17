@@ -2,27 +2,18 @@ import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'package:provider/provider.dart';
 import 'package:my_app/providers/auth_provider.dart';
+import 'package:my_app/core/api/api_client.dart';
+import 'package:my_app/models/posts.dart';
+import 'package:my_app/models/build.dart';
+import 'package:timeago/timeago.dart' as timeago;
+import 'package:my_app/core/widgets/profile_picture_modal.dart';
 
-// --- INICIO DE MODELOS DE DATOS (Mantenidos en este archivo por ahora) ---
-class BuildItem {
-  final String title;
-  final String imageUrl;
-  BuildItem({required this.title, required this.imageUrl});
-}
+class ProfileData {
+  final List<Post> posts;
+  final List<BuildSummary> builds;
 
-class PostItem {
-  final String timeAgo;
-  final String title;
-  final String description;
-  final String imageUrl;
-  PostItem({
-    required this.timeAgo,
-    required this.title,
-    required this.description,
-    required this.imageUrl,
-  });
+  ProfileData({required this.posts, required this.builds});
 }
-// --- FIN DE MODELOS DE DATOS ---
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -32,118 +23,279 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  // --- DATOS MOCK (Tomados de tu ejemplo) ---
-  final List<BuildItem> builds = [
-    BuildItem(
-      title: 'Gaming PC Build',
-      imageUrl:
-          'https://lh3.googleusercontent.com/aida-public/AB6AXuBOhjB2lM8_KNzqgZ_UZG1ZiTgnImvf0iTTBJHzz4ZJfWp54NhbhGNkmeCxU6MHJUBIdLxqGKGNrU5lW0H6cwBiiz8Q_i14pzXsWkpCYpgujITzwdb4jvMSZ-nRmjGYCTp_46XdMLoijeNzRfo4dvOmGuYoU9bzwTcasG0wLMbZqB8x4opqj8MU6-MAkIHuOPhFpZ4GjdovizaDRq7w0kxk_-GVfoMmEKvSUFhWhXmIbw0dhI5ftD9CSBYnZSoV7XaGfEW19o0CNrU',
-    ),
-    BuildItem(
-      title: 'Streaming Setup',
-      imageUrl:
-          'https://lh3.googleusercontent.com/aida-public/AB6AXuAheOpjHot45ixTcE6oH0gv7qGDl0tJ6Jx3VQGv0y0HeCY_f62LbMk6KO1woLzH8TbIETI_POcPJX9IXQO7SH9X83DqHX8635xnmPzJtSVfZ6R7c_s6ZTUrdNclns6AJzlA9uMPv0uC92JrQ7Aw-csevwJRxhQN2-rSIsY6BoMuZUSh3WTKKWX1SLjZu6ASfp3VQoArynTFYm-tS67DHhzQb4JX43DL9L2j0sl_RkNy8ICnNJTFMLus0NW624xd98AShUZKqLGCTxo',
-    ),
-    BuildItem(
-      title: 'Workstation Build',
-      imageUrl:
-          'https://lh3.googleusercontent.com/aida-public/AB6AXuDmX3WDw--Z2jr62e2t4bWlfx9dliJY9M34de64tUTJsnLaohN_mGHMWlVTe3G13A1PNplwZUL4DBTIOrftuhlLkRgSXfsEShf7GQJxM0vRXEiJCePCYHL2SY_WOOMp3rbJnBx5PGH5qSyaMYEPe9EoMzXXkCOB_6SQywjmB04fgyESzId8k0VE-JwHJDgPtwOa7KGKspXxtk4lX_pzQOyN_2sZOmLvnjTZReIeog6s7B5SHC44qd_oGtXyNqjWkSnNpFY2RLCOSWw',
-    ),
-  ];
+  late Future<ProfileData> _profileDataFuture;
+  late ApiClient _apiClient;
 
-  final List<PostItem> posts = [
-    PostItem(
-      timeAgo: 'hace 2 días',
-      title: 'Nueva build para gaming y streaming',
-      description:
-          'Mira mi última build, optimizada tanto para gaming como para streaming. ¡Déjame saber qué piensas!',
-      imageUrl:
-          'https://lh3.googleusercontent.com/aida-public/AB6AXuA3wKndLEfWphcbQj40cAA6uVctDJZIR_fzqaxkO-_rbJrW9DnNMuOQjY56F9x79Y9gffeBIvWjrVq-IqzyvwbTNWhZ_RVBYYkYKQxY7oZ7FXZGMEamWnPLqMb2Dov8Q5v1US0lBaM09nnhGSPJEi3GO9koSOZ_4tDizWpMUNNR0NNQoxEZIW2XiB1sVrI8rsb3EKQcOH-I3nlqo9mCwJ9T3TdH9PCt_50GmbfNwe7Hr-vnz7huYk4qaedTSsS0Tc_t0ES5QV2vP4g',
-    ),
-    PostItem(
-      timeAgo: 'hace 1 semana',
-      title: 'Mejor PC gaming económica',
-      description:
-          '¿Buscas una PC gaming económica? Aquí está mi recomendación para una configuración potente pero asequible.',
-      imageUrl:
-          'https://lh3.googleusercontent.com/aida-public/AB6AXuA_0uQwbSzLRnYNAlTaxdOuaZUhDBhVNQKpITcUtGGefUZqzbcBjfG1LJ0tXfPsh1dR-i0uGbTcYLedSkVBp_i7JT3Kab96w18Mv9yAmQEr-eV0go_JV9DF9hoYhMjeTDgBapjbGjFq1Z4x0OyfDlP3bpS-UPPeofqzIip_lC2SrGX5E26NnZWMZ4YxXCsn8J9HbRluSnwSkpyq2JOEnndWRZc4iIMGRi8W6Kj4qIQq3DXxTta4yOdNEXCFE7-6m_rGIESPb9k7gJ0',
-    ),
-  ];
-  // --- FIN DATOS MOCK ---
+  @override
+  void initState() {
+    super.initState();
+    _apiClient = Provider.of<ApiClient>(context, listen: false);
+    timeago.setLocaleMessages('es_short', timeago.EsShortMessages());
+    _loadProfileData();
+  }
+
+  void _loadProfileData() {
+    setState(() {
+      _profileDataFuture = _fetchData();
+    });
+  }
+
+  Future<ProfileData> _fetchData() async {
+    try {
+      final results = await Future.wait([
+        _apiClient.getMyPosts(),
+        _apiClient.getMyBuilds(),
+      ]);
+
+      final posts = results[0] as List<Post>;
+      final builds = results[1] as List<BuildSummary>;
+
+      return ProfileData(posts: posts, builds: builds);
+    } catch (e) {
+      throw Exception('Error al cargar datos del perfil: $e');
+    }
+  }
+
+  void _showEditProfileModal(BuildContext context, User currentUser) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        return _EditProfileModal(
+          apiClient: _apiClient,
+          user: currentUser,
+          onProfileUpdated: () {},
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Obtenemos el usuario del AuthProvider
     final authProvider = Provider.of<AuthProvider>(context);
     final user = authProvider.user;
-    final isDesktop = MediaQuery.of(context).size.width >= 768;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 768;
+    final isTablet = screenWidth >= 768 && screenWidth < 1024;
 
-    // NO usamos Scaffold, MainLayout ya lo proporciona.
-    // Devolvemos directamente el contenido de la página.
-    return SingleChildScrollView(
-      padding: EdgeInsets.symmetric(
-        horizontal: isDesktop ? 40 : 24,
-        vertical: 20,
-      ),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 960),
-          child: Column(
+    return FutureBuilder<ProfileData>(
+      future: _profileDataFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: Color(0xFFC7384D)),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    color: Colors.red[400],
+                    size: isMobile ? 56 : 64,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Error al cargar el perfil',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: isMobile ? 16 : 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${snapshot.error}',
+                    style: TextStyle(
+                      color: Colors.grey[400],
+                      fontSize: isMobile ? 13 : 14,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton.icon(
+                    onPressed: _loadProfileData,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Reintentar'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFC7384D),
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: isMobile ? 20 : 24,
+                        vertical: isMobile ? 12 : 14,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        final profileData = snapshot.data!;
+        final allPosts = profileData.posts;
+        final allBuilds = profileData.builds;
+
+        final int postCount = allPosts.length;
+        final int buildCount = allBuilds.length;
+
+        final sortedPosts = List<Post>.from(allPosts);
+        sortedPosts.sort(
+          (a, b) => (b.likesCount + b.commentsCount).compareTo(
+            a.likesCount + a.commentsCount,
+          ),
+        );
+        final topPosts = sortedPosts.take(4).toList();
+        final topBuilds = allBuilds.take(4).toList();
+
+        return RefreshIndicator(
+          onRefresh: () async {
+            _loadProfileData();
+            await Future.delayed(const Duration(milliseconds: 500));
+          },
+          color: const Color(0xFFC7384D),
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.symmetric(
+              horizontal: isMobile ? 16 : (isTablet ? 32 : 40),
+              vertical: isMobile ? 16 : 20,
+            ),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: isTablet ? 800 : 960),
+                child: Column(
+                  children: [
+                    ProfileHeader(
+                      user: user,
+                      isMobile: isMobile,
+                      onEditPressed: () {
+                        if (user != null) {
+                          _showEditProfileModal(context, user);
+                        }
+                      },
+                    ),
+                    SizedBox(height: isMobile ? 20 : 24),
+
+                    StatsRow(
+                      buildCount: buildCount,
+                      postCount: postCount,
+                      isMobile: isMobile,
+                    ),
+                    SizedBox(height: isMobile ? 24 : 32),
+
+                    _buildSectionHeader(
+                      context,
+                      title: 'Mis Builds',
+                      isMobile: isMobile,
+                      onViewAllPressed: () =>
+                          Navigator.pushNamed(context, '/my-builds'),
+                    ),
+                    SizedBox(height: isMobile ? 12 : 16),
+                    BuildsGrid(builds: topBuilds, isMobile: isMobile),
+                    SizedBox(height: isMobile ? 24 : 32),
+
+                    _buildSectionHeader(
+                      context,
+                      title: 'Mis Publicaciones',
+                      isMobile: isMobile,
+                      onViewAllPressed: () =>
+                          Navigator.pushNamed(context, '/my-posts'),
+                    ),
+                    SizedBox(height: isMobile ? 12 : 16),
+                    PostsList(posts: topPosts, isMobile: isMobile),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSectionHeader(
+    BuildContext context, {
+    required String title,
+    required VoidCallback onViewAllPressed,
+    required bool isMobile,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: isMobile ? 18 : 22,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        TextButton(
+          onPressed: onViewAllPressed,
+          style: TextButton.styleFrom(
+            padding: EdgeInsets.symmetric(
+              horizontal: isMobile ? 8 : 12,
+              vertical: isMobile ? 4 : 8,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              // Header del perfil (conectado al AuthProvider)
-              ProfileHeader(user: user),
-              const SizedBox(height: 24),
-
-              // Estadísticas
-              StatsRow(),
-              const SizedBox(height: 32),
-
-              // Mis Builds
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Mis Builds',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
+              Text(
+                'Ver todos',
+                style: TextStyle(
+                  color: Theme.of(context).primaryColor,
+                  fontSize: isMobile ? 13 : 14,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 16),
-              BuildsGrid(builds: builds),
-              const SizedBox(height: 32),
-
-              // Mis Publicaciones
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Mis Publicaciones',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+              const SizedBox(width: 4),
+              Icon(
+                Icons.arrow_forward_ios,
+                size: isMobile ? 12 : 14,
+                color: Theme.of(context).primaryColor,
               ),
-              const SizedBox(height: 16),
-              PostsList(posts: posts),
             ],
           ),
         ),
-      ),
+      ],
     );
   }
 }
 
-// --- WIDGETS DE PERFIL (Basados en tu nuevo diseño) ---
-
 class ProfileHeader extends StatelessWidget {
-  final User? user; // Recibe el usuario del AuthProvider
-  const ProfileHeader({super.key, this.user});
+  final User? user;
+  final VoidCallback onEditPressed;
+  final bool isMobile;
+
+  const ProfileHeader({
+    super.key,
+    this.user,
+    required this.onEditPressed,
+    this.isMobile = false,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final ImageProvider avatarImage =
+        (user?.avatarUrl != null && user!.avatarUrl!.isNotEmpty)
+        ? NetworkImage(user!.avatarUrl!)
+        : const NetworkImage(
+                'https://static.vecteezy.com/system/resources/previews/009/734/564/original/default-avatar-profile-icon-of-social-media-user-vector.jpg',
+              )
+              as ImageProvider;
+
+    final avatarSize = isMobile ? 100.0 : 128.0;
+    final nameFontSize = isMobile ? 20.0 : 22.0;
+    final usernameFontSize = isMobile ? 14.0 : 16.0;
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: BackdropFilter(
@@ -154,70 +306,67 @@ class ProfileHeader extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: const Color(0xFF2A2A2A), width: 1),
           ),
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.all(isMobile ? 20 : 24),
           child: Column(
             children: [
-              // Avatar
               Container(
-                width: 128,
-                height: 128,
+                width: avatarSize,
+                height: avatarSize,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(color: const Color(0xFFC7384D), width: 3),
-                  image: const DecorationImage(
-                    // TODO: Reemplazar con user?.avatarUrl cuando exista
-                    image: NetworkImage(
-                      'https://lh3.googleusercontent.com/aida-public/AB6AXuDwns93uToiC8Lh4Chj4POopDnEG27co1Eu6GWBzMl5NAy6SACXnc5JgjBugBqkZJDUGzYlh47-C2AN9TbebzzMIaMuWz8d_Cpar1B6AW-HdgDUafhgVVRDEkX6D6SMHKzjyB8Stoxq-z1YO0jSmnVgpB84Yhx_TI5Ji-YS1wrS_mt7CdN2fbRHZLAg544dQTUHlne-3XLkImG0aPdV5J3aGlJJEDtFWaNKMVc37EcPN6u6QvNoPVAniC8kRHQmgjMj5kCUIenpUjo',
-                    ),
-                    fit: BoxFit.cover,
-                  ),
+                  image: DecorationImage(image: avatarImage, fit: BoxFit.cover),
                 ),
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: isMobile ? 12 : 16),
 
-              // Nombre (del AuthProvider)
               Text(
-                user?.username ?? 'Nombre de Usuario', // Dato dinámico
-                style: const TextStyle(
+                user?.name ?? user?.username ?? 'Nombre de Usuario',
+                style: TextStyle(
                   color: Colors.white,
-                  fontSize: 22,
+                  fontSize: nameFontSize,
                   fontWeight: FontWeight.bold,
                 ),
+                textAlign: TextAlign.center,
               ),
               const SizedBox(height: 4),
 
-              // Username (del AuthProvider)
               Text(
-                '@${user?.username ?? 'username'}', // Dato dinámico
-                style: const TextStyle(color: Color(0xFFA0A0A0), fontSize: 16),
+                '@${user?.username ?? 'username'}',
+                style: TextStyle(
+                  color: const Color(0xFFA0A0A0),
+                  fontSize: usernameFontSize,
+                ),
               ),
               const SizedBox(height: 4),
 
-              // Fecha (TODO: Hacer dinámico en el futuro)
-              const Text(
+              Text(
                 'Miembro desde 2021',
-                style: TextStyle(color: Color(0xFFA0A0A0), fontSize: 16),
+                style: TextStyle(
+                  color: const Color(0xFFA0A0A0),
+                  fontSize: usernameFontSize,
+                ),
               ),
-              const SizedBox(height: 24),
+              SizedBox(height: isMobile ? 16 : 24),
 
-              // Botón Editar
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () {
-                    // TODO: Implementar navegación a /profile/edit
-                  },
+                  onPressed: onEditPressed,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFC7384D),
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    padding: EdgeInsets.symmetric(vertical: isMobile ? 12 : 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  child: const Text(
+                  child: Text(
                     'Editar Perfil',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: isMobile ? 14 : 15,
+                    ),
                   ),
                 ),
               ),
@@ -230,23 +379,35 @@ class ProfileHeader extends StatelessWidget {
 }
 
 class StatsRow extends StatelessWidget {
-  const StatsRow({super.key});
+  final int buildCount;
+  final int postCount;
+  final bool isMobile;
+
+  const StatsRow({
+    super.key,
+    required this.buildCount,
+    required this.postCount,
+    this.isMobile = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Row(
-      children: const [
-        // TODO: Conectar estos números a datos reales
+      children: [
         Expanded(
-          child: StatCard(number: '12', label: 'Builds'),
+          child: StatCard(
+            number: buildCount.toString(),
+            label: 'Builds',
+            isMobile: isMobile,
+          ),
         ),
-        SizedBox(width: 12),
+        SizedBox(width: isMobile ? 8 : 12),
         Expanded(
-          child: StatCard(number: '34', label: 'Posts'),
-        ),
-        SizedBox(width: 12),
-        Expanded(
-          child: StatCard(number: '56', label: 'Seguidores'),
+          child: StatCard(
+            number: postCount.toString(),
+            label: 'Posts',
+            isMobile: isMobile,
+          ),
         ),
       ],
     );
@@ -256,8 +417,14 @@ class StatsRow extends StatelessWidget {
 class StatCard extends StatelessWidget {
   final String number;
   final String label;
+  final bool isMobile;
 
-  const StatCard({super.key, required this.number, required this.label});
+  const StatCard({
+    super.key,
+    required this.number,
+    required this.label,
+    this.isMobile = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -271,21 +438,27 @@ class StatCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: const Color(0xFF2A2A2A), width: 1),
           ),
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+          padding: EdgeInsets.symmetric(
+            vertical: isMobile ? 12 : 16,
+            horizontal: isMobile ? 8 : 12,
+          ),
           child: Column(
             children: [
               Text(
                 number,
-                style: const TextStyle(
+                style: TextStyle(
                   color: Colors.white,
-                  fontSize: 24,
+                  fontSize: isMobile ? 20 : 24,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 4),
+              SizedBox(height: isMobile ? 2 : 4),
               Text(
                 label,
-                style: const TextStyle(color: Color(0xFFA0A0A0), fontSize: 14),
+                style: TextStyle(
+                  color: const Color(0xFFA0A0A0),
+                  fontSize: isMobile ? 12 : 14,
+                ),
               ),
             ],
           ),
@@ -296,33 +469,54 @@ class StatCard extends StatelessWidget {
 }
 
 class BuildsGrid extends StatelessWidget {
-  final List<BuildItem> builds;
+  final List<BuildSummary> builds;
+  final bool isMobile;
 
-  const BuildsGrid({super.key, required this.builds});
+  const BuildsGrid({super.key, required this.builds, this.isMobile = false});
 
   @override
   Widget build(BuildContext context) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        childAspectRatio: 0.9,
-      ),
-      itemCount: builds.length,
-      itemBuilder: (context, index) {
-        return BuildCard(buildItem: builds[index]);
-      },
+    if (builds.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: isMobile ? 32.0 : 40.0),
+          child: Column(
+            children: [
+              Icon(
+                Icons.precision_manufacturing_outlined,
+                size: isMobile ? 56 : 64,
+                color: Colors.grey.shade600,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Aún no has creado ninguna build.',
+                style: TextStyle(
+                  color: const Color(0xFFA0A0A0),
+                  fontSize: isMobile ? 14 : 15,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: builds.map((build) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: isMobile ? 12 : 16),
+          child: BuildCard(buildItem: build, isMobile: isMobile),
+        );
+      }).toList(),
     );
   }
 }
 
 class BuildCard extends StatelessWidget {
-  final BuildItem buildItem;
+  final BuildSummary buildItem;
+  final bool isMobile;
 
-  const BuildCard({super.key, required this.buildItem});
+  const BuildCard({super.key, required this.buildItem, this.isMobile = false});
 
   @override
   Widget build(BuildContext context) {
@@ -336,34 +530,50 @@ class BuildCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: const Color(0xFF2A2A2A), width: 1),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          padding: EdgeInsets.all(isMobile ? 12.0 : 16.0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
+              Icon(
+                Icons.precision_manufacturing,
+                color: Theme.of(context).primaryColor,
+                size: isMobile ? 28 : 32,
+              ),
+              SizedBox(width: isMobile ? 12 : 16),
               Expanded(
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(12),
-                    topRight: Radius.circular(12),
-                  ),
-                  child: Image.network(
-                    buildItem.imageUrl,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      buildItem.name,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: isMobile ? 15 : 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    SizedBox(height: isMobile ? 6 : 8),
+                    _BuildSpec(
+                      icon: Icons.memory,
+                      value: buildItem.cpuName ?? 'N/A',
+                      isMobile: isMobile,
+                    ),
+                    const SizedBox(height: 4),
+                    _BuildSpec(
+                      icon: Icons.developer_board,
+                      value: buildItem.gpuName ?? 'N/A',
+                      isMobile: isMobile,
+                    ),
+                  ],
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Text(
-                  buildItem.title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
+              SizedBox(width: isMobile ? 8 : 16),
+              Icon(
+                Icons.arrow_forward_ios,
+                color: Colors.grey[600],
+                size: isMobile ? 14 : 16,
               ),
             ],
           ),
@@ -373,18 +583,77 @@ class BuildCard extends StatelessWidget {
   }
 }
 
-class PostsList extends StatelessWidget {
-  final List<PostItem> posts;
+class _BuildSpec extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  final bool isMobile;
 
-  const PostsList({super.key, required this.posts});
+  const _BuildSpec({
+    required this.icon,
+    required this.value,
+    this.isMobile = false,
+  });
 
   @override
   Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: const Color(0xFFA0A0A0), size: isMobile ? 14 : 16),
+        SizedBox(width: isMobile ? 6 : 8),
+        Flexible(
+          child: Text(
+            value,
+            style: TextStyle(
+              color: const Color(0xFFE0E0E0),
+              fontSize: isMobile ? 12 : 13,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class PostsList extends StatelessWidget {
+  final List<Post> posts;
+  final bool isMobile;
+
+  const PostsList({super.key, required this.posts, this.isMobile = false});
+
+  @override
+  Widget build(BuildContext context) {
+    if (posts.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: isMobile ? 32.0 : 40.0),
+          child: Column(
+            children: [
+              Icon(
+                Icons.article_outlined,
+                size: isMobile ? 56 : 64,
+                color: Colors.grey.shade600,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Aún no has creado ninguna publicación.',
+                style: TextStyle(
+                  color: const Color(0xFFA0A0A0),
+                  fontSize: isMobile ? 14 : 15,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Column(
       children: posts.map((post) {
         return Padding(
-          padding: const EdgeInsets.only(bottom: 16),
-          child: ProfilePostCard(post: post),
+          padding: EdgeInsets.only(bottom: isMobile ? 12 : 16),
+          child: ProfilePostCard(post: post, isMobile: isMobile),
         );
       }).toList(),
     );
@@ -392,12 +661,17 @@ class PostsList extends StatelessWidget {
 }
 
 class ProfilePostCard extends StatelessWidget {
-  final PostItem post;
+  final Post post;
+  final bool isMobile;
 
-  const ProfilePostCard({super.key, required this.post});
+  const ProfilePostCard({super.key, required this.post, this.isMobile = false});
 
   @override
   Widget build(BuildContext context) {
+    final imageUrl =
+        post.imageUrl ??
+        'https://via.placeholder.com/300x200.png?text=No+Image';
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: BackdropFilter(
@@ -408,20 +682,16 @@ class ProfilePostCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: const Color(0xFF2A2A2A), width: 1),
           ),
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 2,
-                child: Column(
+          padding: EdgeInsets.all(isMobile ? 12 : 16),
+          child: isMobile
+              ? Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      post.timeAgo,
+                      timeago.format(post.createdAt, locale: 'es_short'),
                       style: const TextStyle(
                         color: Color(0xFFA0A0A0),
-                        fontSize: 14,
+                        fontSize: 12,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -429,35 +699,418 @@ class ProfilePostCard extends StatelessWidget {
                       post.title,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 16,
+                        fontSize: 15,
                         fontWeight: FontWeight.bold,
                       ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 8),
+                    if (post.imageUrl != null)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: AspectRatio(
+                          aspectRatio: 16 / 9,
+                          child: Image.network(
+                            imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                color: Colors.black.withOpacity(0.3),
+                                child: const Icon(
+                                  Icons.image_not_supported_outlined,
+                                  color: Color(0xFFA0A0A0),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 8),
                     Text(
-                      post.description,
+                      post.content,
                       style: const TextStyle(
                         color: Color(0xFFA0A0A0),
-                        fontSize: 14,
-                        height: 1.5,
+                        fontSize: 13,
+                        height: 1.4,
+                      ),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                )
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            timeago.format(post.createdAt, locale: 'es_short'),
+                            style: const TextStyle(
+                              color: Color(0xFFA0A0A0),
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            post.title,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            post.content,
+                            style: const TextStyle(
+                              color: Color(0xFFA0A0A0),
+                              fontSize: 14,
+                              height: 1.5,
+                            ),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      flex: 1,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: AspectRatio(
+                          aspectRatio: 16 / 9,
+                          child: Image.network(
+                            imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                color: Colors.black.withOpacity(0.3),
+                                child: const Icon(
+                                  Icons.image_not_supported_outlined,
+                                  color: Color(0xFFA0A0A0),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EditProfileModal extends StatefulWidget {
+  final User user;
+  final ApiClient apiClient;
+  final VoidCallback onProfileUpdated;
+
+  const _EditProfileModal({
+    required this.user,
+    required this.apiClient,
+    required this.onProfileUpdated,
+  });
+
+  @override
+  State<_EditProfileModal> createState() => _EditProfileModalState();
+}
+
+class _EditProfileModalState extends State<_EditProfileModal> {
+  late TextEditingController _usernameController;
+  late TextEditingController _nameController;
+  String? _avatarUrl;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _usernameController = TextEditingController(text: widget.user.username);
+    _nameController = TextEditingController(text: widget.user.name ?? '');
+    _avatarUrl = widget.user.avatarUrl;
+  }
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _showProfilePictureModal() async {
+    final String? newUrl = await showModalBottomSheet<String?>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => ProfilePictureModal(apiClient: widget.apiClient),
+    );
+
+    if (newUrl != null && newUrl.isNotEmpty) {
+      setState(() {
+        _avatarUrl = newUrl;
+      });
+    }
+  }
+
+  Future<void> _handleSave() async {
+    FocusScope.of(context).unfocus();
+
+    setState(() => _isLoading = true);
+
+    try {
+      final updatedUserResponse = await widget.apiClient.updateUser(
+        name: _nameController.text.trim(),
+        username: _usernameController.text.trim(),
+        avatarUrl: _avatarUrl,
+      );
+
+      if (!mounted) return;
+
+      Provider.of<AuthProvider>(
+        context,
+        listen: false,
+      ).updateUser(updatedUserResponse);
+
+      Navigator.of(context).pop();
+      widget.onProfileUpdated();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Perfil actualizado con éxito.'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al guardar: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      builder: (_, controller) => Container(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+          left: isMobile ? 20 : 24,
+          right: isMobile ? 20 : 24,
+          top: isMobile ? 20 : 24,
+        ),
+        decoration: const BoxDecoration(
+          color: Color(0xFF1A1A1C),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: ListView(
+          controller: controller,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 20),
+                decoration: BoxDecoration(
+                  color: Colors.grey[600],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Text(
+              'Editar Perfil',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: isMobile ? 22 : 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            SizedBox(height: isMobile ? 20 : 24),
+
+            Center(
+              child: Stack(
+                children: [
+                  CircleAvatar(
+                    radius: isMobile ? 45 : 50,
+                    backgroundColor: const Color(0xFF2A2A2A),
+                    backgroundImage:
+                        (_avatarUrl != null && _avatarUrl!.isNotEmpty)
+                        ? NetworkImage(_avatarUrl!)
+                        : const NetworkImage(
+                                'https://static.vecteezy.com/system/resources/previews/009/734/564/original/default-avatar-profile-icon-of-social-media-user-vector.jpg',
+                              )
+                              as ImageProvider,
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: Material(
+                      color: Theme.of(context).primaryColor,
+                      shape: const CircleBorder(),
+                      elevation: 4,
+                      child: InkWell(
+                        onTap: _isLoading ? null : _showProfilePictureModal,
+                        customBorder: const CircleBorder(),
+                        child: Padding(
+                          padding: EdgeInsets.all(isMobile ? 6.0 : 8.0),
+                          child: Icon(
+                            Icons.camera_alt,
+                            color: Colors.white,
+                            size: isMobile ? 18 : 20,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: isMobile ? 20 : 24),
+
+            IgnorePointer(
+              ignoring: _isLoading,
+              child: Opacity(
+                opacity: _isLoading ? 0.6 : 1.0,
+                child: Column(
+                  children: [
+                    TextFormField(
+                      controller: _nameController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Nombre',
+                        labelStyle: TextStyle(
+                          color: Colors.grey[400],
+                          fontSize: isMobile ? 14 : 15,
+                        ),
+                        filled: true,
+                        fillColor: Colors.black.withOpacity(0.3),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: Color(0xFF2A2A2A),
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: Color(0xFF2A2A2A),
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFC7384D),
+                            width: 2,
+                          ),
+                        ),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: isMobile ? 14 : 16,
+                          vertical: isMobile ? 14 : 16,
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: isMobile ? 14 : 16),
+                    TextFormField(
+                      controller: _usernameController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Nombre de Usuario',
+                        labelStyle: TextStyle(
+                          color: Colors.grey[400],
+                          fontSize: isMobile ? 14 : 15,
+                        ),
+                        filled: true,
+                        fillColor: Colors.black.withOpacity(0.3),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: Color(0xFF2A2A2A),
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: Color(0xFF2A2A2A),
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFC7384D),
+                            width: 2,
+                          ),
+                        ),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: isMobile ? 14 : 16,
+                          vertical: isMobile ? 14 : 16,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                flex: 1,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: AspectRatio(
-                    aspectRatio: 16 / 9,
-                    child: Image.network(post.imageUrl, fit: BoxFit.cover),
+            ),
+            SizedBox(height: isMobile ? 20 : 24),
+
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _handleSave,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFC7384D),
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(vertical: isMobile ? 14 : 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
+                  elevation: _isLoading ? 0 : 2,
+                  disabledBackgroundColor: const Color(
+                    0xFFC7384D,
+                  ).withOpacity(0.6),
                 ),
+                child: _isLoading
+                    ? SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: Colors.white.withOpacity(0.9),
+                        ),
+                      )
+                    : Text(
+                        'Guardar Cambios',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: isMobile ? 15 : 16,
+                        ),
+                      ),
               ),
-            ],
-          ),
+            ),
+            SizedBox(height: isMobile ? 16 : 20),
+          ],
         ),
       ),
     );

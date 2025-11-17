@@ -526,7 +526,7 @@ packages:
     source: hosted
     version: "0.7.6"
   timeago:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: timeago
       sha256: b05159406a97e1cbb2b9ee4faa9fb096fe0e2dfcd8b08fcd2a00553450d3422e

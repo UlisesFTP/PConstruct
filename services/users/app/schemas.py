@@ -85,3 +85,17 @@ class LoginResponse(BaseModel):
 
     class Config:
         orm_mode = True # Aunque el principal es el de UserResponse, no hace daño
+        
+
+
+class UserUpdate(BaseModel):
+    """
+    Esquema para actualizar datos del usuario.
+    Todos los campos son opcionales.
+    """
+    name: Optional[str] = None
+    username: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+    class Config:
+        from_attributes = True

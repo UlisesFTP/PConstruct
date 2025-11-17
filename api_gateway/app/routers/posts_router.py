@@ -18,7 +18,7 @@ router = APIRouter(prefix="/posts", tags=["posts"])
 
 
 # --- Endpoint de "Obtener Mis Posts" ---
-@router.get("/me/")
+@router.get("/me/", response_model=None)
 async def get_my_posts(request: Request, authorization: str | None = Header(None)):
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing token")
@@ -49,7 +49,7 @@ async def get_my_posts(request: Request, authorization: str | None = Header(None
 
 
 # --- Endpoint de "Obtener Feed General" (Modificado para no chocar con /me/) ---
-@router.get("/")
+@router.get("/", response_model=None)
 async def get_posts(request: Request, authorization: str | None = Header(None)):
     headers = {}
     if authorization:
@@ -78,7 +78,7 @@ async def get_posts(request: Request, authorization: str | None = Header(None)):
             raise HTTPException(status_code=503, detail="Posts service unavailable")
 
 # --- NUEVO: Endpoint para Actualizar (Editar) un Post ---
-@router.put("/{post_id}")
+@router.put("/{post_id}", response_model=None)
 async def update_post(
     post_id: int,
     request: Request,
@@ -149,7 +149,7 @@ async def delete_post(
 
 
 
-@router.post("/")
+@router.post("/", response_model=None)
 async def create_post(
     request: Request,
     authorization: str | None = Header(None),
@@ -291,7 +291,7 @@ async def unlike_post(
             logger.error(f"Unlike post error: {str(e)}")
             raise HTTPException(status_code=503, detail="Service unavailable")
 
-@router.post("/{post_id}/comments")
+@router.post("/{post_id}/comments", response_model=None)
 async def create_comment(
     post_id: int,
     request: Request,
@@ -316,7 +316,7 @@ async def create_comment(
             logger.error(f"Create comment error: {str(e)}")
             raise HTTPException(status_code=503, detail="Service unavailable")
 
-@router.get("/{post_id}/comments")
+@router.get("/{post_id}/comments", response_model=None)
 async def get_comments(post_id: int):
     async with httpx.AsyncClient() as client:
         try:

@@ -13,12 +13,8 @@ BUILD_SERVICE_URL = SERVICE_CONFIG.get("build")
 if not BUILD_SERVICE_URL:
     raise RuntimeError("BUILD_SERVICE_URL no está configurado en SERVICE_CONFIG")
 
-# --- ¡FUNCIÓN ELIMINADA! ---
-# Ya no usamos _get_auth_headers, usaremos verify_token
 
-# --- Endpoints de Builds (Corregidos) ---
-
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post("/", status_code=status.HTTP_201_CREATED, response_model=None)
 async def create_build(
     request: Request,
     authorization: str | None = Header(None) # <-- ¡Como en tu posts_router!
@@ -105,7 +101,7 @@ async def delete_build(
 
 # --- RUTAS PÚBLICAS (Sin cambios) ---
 
-@router.get("/community")
+@router.get("/community", response_model=None)
 async def get_community_builds(request: Request):
     """
     Obtiene las builds públicas de la comunidad. (Ruta pública)
@@ -115,7 +111,7 @@ async def get_community_builds(request: Request):
         target_url=f"{BUILD_SERVICE_URL}/api/v1/builds/community"
     )
 
-@router.get("/{build_id}")
+@router.get("/{build_id}", response_model=None)
 async def get_build_detail(build_id: str, request: Request):
     """
     Obtiene el detalle de una build específica. (Ruta pública)
@@ -125,7 +121,7 @@ async def get_build_detail(build_id: str, request: Request):
         target_url=f"{BUILD_SERVICE_URL}/api/v1/builds/{build_id}"
     )
 
-@router.post("/check-compatibility")
+@router.post("/check-compatibility", response_model=None)
 async def check_compatibility(request: Request):
     """
     Verifica la compatibilidad de un conjunto de componentes. (Ruta pública)
@@ -135,7 +131,7 @@ async def check_compatibility(request: Request):
         target_url=f"{BUILD_SERVICE_URL}/api/v1/builds/check-compatibility"
     )
     
-@router.post("/chat")
+@router.post("/chat", response_model=None)
 async def chat(request: Request):
     return await forward_request(
         request=request,

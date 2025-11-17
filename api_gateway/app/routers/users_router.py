@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, status, Header
+
+from fastapi import APIRouter, HTTPException, status, Header, Request
 from fastapi.responses import JSONResponse
 from typing import Dict
 import httpx
@@ -12,6 +13,7 @@ import cloudinary # <-- NUEVA IMPORTACIÓN
 import cloudinary.api # <-- NUEVA IMPORTACIÓN
 import cloudinary.uploader # <-- NUEVA IMPORTACIÓN
 import time # <-- NUEVA IMPORTACIÓN
+from app.utils.http_forward import forward_request
 
 if not hasattr(cloudinary.config(), "api_key"):
     cloudinary.config(
@@ -24,23 +26,30 @@ if not hasattr(cloudinary.config(), "api_key"):
 
 router = APIRouter(prefix="/users", tags=["users"])
 
-@router.get("/me")
-async def get_current_user(authorization: str | None = Header(None)):
+@router.patch("/me", response_model=None)
+async def update_current_user_profile(
+    request: Request,
+    authorization: str | None = Header(None)
+):
+    """
+    Endpoint del Gateway para actualizar el perfil del usuario.
+    Verifica el token y reenvía al microservicio de usuarios.
+    """
     token_data: Dict = verify_token(authorization)
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.get(
-                f"{SERVICE_CONFIG['user']}/users/{token_data['sub']}",
-                headers={"X-User-ID": token_data["sub"]},
-                timeout=30.0
-            )
-            return JSONResponse(status_code=response.status_code, content=response.json())
-        except Exception as e:
-            logger.error(f"Get user error: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="User service unavailable"
-            )
+    user_id = token_data.get("sub") # 'sub' debería ser el user_id
+    
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token, missing 'sub' (user_id)")
+
+    # Preparamos la cabecera X-User-ID para el microservicio
+    headers = {"X-User-ID": str(user_id)}
+
+    # Reenviamos la solicitud (cuerpo JSON + cabecera) al microservicio
+    return await forward_request(
+        request=request,
+        target_url=f"{SERVICE_CONFIG['user']}/users/me",
+        custom_headers=headers
+    )
 
 
 @router.post("/generate-upload-signature")

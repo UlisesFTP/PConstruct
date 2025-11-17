@@ -1,6 +1,7 @@
 # PConstruct/services/users/app/main.py
+
 import os
-from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
@@ -37,6 +38,19 @@ def generate_verification_code():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "users", "timestamp": datetime.now()}
+
+
+
+
+def get_current_user_id(x_user_id: str = Header(...)) -> int:
+    """Dependencia para obtener el ID de usuario desde las cabeceras del gateway."""
+    try:
+        return int(x_user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid User ID header")
+    
+  
+    
 
 @app.post("/auth/register", response_model=schemas.UserResponse)
 async def register_user(
@@ -222,3 +236,29 @@ async def search_users_endpoint(q: str, db: AsyncSession = Depends(get_db)):
     """Endpoint para buscar usuarios."""
     users = await crud.search_users(db, query=q)
     return users
+
+
+
+
+
+@app.patch("/users/me", response_model=schemas.UserResponse)
+async def update_current_user(
+    user_update: schemas.UserUpdate,
+    db: AsyncSession = Depends(get_db),
+    user_id: int = Depends(get_current_user_id)
+):
+    """
+    Actualiza el perfil (nombre, username, avatar) del usuario autenticado.
+    """
+    db_user = await crud.get_user_by_id(db, user_id)
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Verificar si el nuevo username ya está en uso
+    if user_update.username and user_update.username != db_user.username:
+        existing_user = await crud.get_user_by_username(db, user_update.username)
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Username already registered")
+
+    updated_user = await crud.update_user(db=db, db_user=db_user, user_in=user_update)
+    return updated_user

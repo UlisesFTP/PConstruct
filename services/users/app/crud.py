@@ -6,6 +6,7 @@ from . import models, schemas
 from sqlalchemy import select
 from typing import List
 from sqlalchemy import select, or_
+from .schemas import UserUpdate
 
 # --- FUNCIONES DE BÚSQUEDA ASÍNCRONAS ---
 
@@ -108,3 +109,19 @@ async def search_users(db: AsyncSession, query: str, limit: int = 5):
         .limit(limit)
     )
     return result.scalars().all()
+
+
+async def update_user(db: AsyncSession, db_user: models.User, user_in: UserUpdate) -> models.User:
+    """
+    Actualiza los campos de un usuario en la base de datos.
+    """
+    # Obtiene los datos del schema como un diccionario
+    update_data = user_in.model_dump(exclude_unset=True)
+    
+    for field, value in update_data.items():
+        if value is not None:
+            setattr(db_user, field, value)
+            
+    await db.commit()
+    await db.refresh(db_user)
+    return db_user
