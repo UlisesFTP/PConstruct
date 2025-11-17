@@ -1,13 +1,19 @@
 # services/builds/app/crud.py
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 from . import models, schemas
 import uuid
 from typing import List, Optional
+from sqlalchemy import func, select, delete # <-- MODIFICADO: Añadir imports
 
-# --- Helper para mapear a BuildSummary ---
-def _map_to_summary(build: models.Build) -> schemas.BuildSummary:
+# --- MODIFICADO: _map_to_summary ahora recibe los conteos ---
+def _map_to_summary(
+    build: models.Build,
+    likes_count: int = 0,
+    comments_count: int = 0,
+    is_liked: bool = False
+) -> schemas.BuildSummary:
     cpu_name = next((c.name for c in build.components if c.category == 'cpu'), None)
     gpu_name = next((c.name for c in build.components if c.category == 'gpu'), None)
     ram_name = next((c.name for c in build.components if c.category == 'ram'), None)
@@ -23,11 +29,15 @@ def _map_to_summary(build: models.Build) -> schemas.BuildSummary:
         cpu_name=cpu_name,
         gpu_name=gpu_name,
         ram_name=ram_name,
+        likes_count=likes_count,         
+        comments_count=comments_count,   
+        is_liked_by_user=is_liked        
     )
 
 # --- Funciones CRUD Asíncronas ---
 
 async def create_build(db: AsyncSession, build: schemas.BuildCreate, user_id: str, user_name: str) -> models.Build:
+    # ... (Esta función se mantiene igual que antes)
     total_price = sum(comp.price_at_build_time for comp in build.components)
 
     db_build = models.Build(
@@ -42,7 +52,7 @@ async def create_build(db: AsyncSession, build: schemas.BuildCreate, user_id: st
     )
     
     db.add(db_build)
-    await db.flush() # await
+    await db.flush() 
 
     for comp in build.components:
         db_comp = models.BuildComponent(
@@ -55,53 +65,197 @@ async def create_build(db: AsyncSession, build: schemas.BuildCreate, user_id: st
         )
         db.add(db_comp)
     
-    await db.commit() # await
-    await db.refresh(db_build) # await
+    await db.commit() 
+    await db.refresh(db_build) 
     
-    # Recargar componentes para la respuesta
     await db.refresh(db_build, attribute_names=['components'])
     
     return db_build
 
-async def get_build_by_id(db: AsyncSession, build_id: uuid.UUID) -> Optional[models.Build]:
+async def get_build_by_id(
+    db: AsyncSession, 
+    build_id: uuid.UUID, 
+    current_user_id: Optional[str] = None
+) -> Optional[schemas.BuildRead]:
+    
+    likes_sq = (
+        select(func.count(models.BuildLike.id))
+        .where(models.BuildLike.build_id == build_id)
+        .scalar_subquery()
+    )
+    comments_sq = (
+        select(func.count(models.BuildComment.id))
+        .where(models.BuildComment.build_id == build_id)
+        .scalar_subquery()
+    )
     query = (
-        select(models.Build)
+        select(models.Build, likes_sq, comments_sq)
         .where(models.Build.id == build_id)
-        .options(joinedload(models.Build.components)) # Carga ansiosa de componentes
+        .options(
+            selectinload(models.Build.components)
+        )
     )
     result = await db.execute(query)
-    return result.scalars().first()
+    row = result.first()
+    
+    if not row:
+        return None
+        
+    db_build, likes_count, comments_count = row
+    
+    is_liked = False
+    if current_user_id:
+        like_result = await db.execute(
+            select(models.BuildLike)
+            .where(
+                (models.BuildLike.build_id == build_id) &
+                (models.BuildLike.user_id == current_user_id)
+            )
+        )
+        is_liked = like_result.scalars().first() is not None
 
-async def get_user_builds(db: AsyncSession, user_id: str) -> List[schemas.BuildSummary]:
+    
+    build_data = schemas.BuildRead.model_validate(db_build)
+ 
+    build_data.likes_count = likes_count
+    build_data.comments_count = comments_count
+    build_data.is_liked_by_user = is_liked
+  
+    
+    return build_data
+
+async def get_user_builds(db: AsyncSession, user_id: str, current_user_id: Optional[str] = None) -> List[schemas.BuildSummary]:
+    # (Esta función necesita una lógica de conteo similar a get_community_builds,
+    # la simplificaremos por ahora para no sobrecargar)
     query = (
         select(models.Build)
         .where(models.Build.user_id == user_id)
         .order_by(models.Build.created_at.desc())
-        .options(joinedload(models.Build.components))
+        .options(
+            selectinload(models.Build.components),
+            selectinload(models.Build.likes), # Carga simple por ahora
+            selectinload(models.Build.comments) # Carga simple por ahora
+        )
     )
     result = await db.execute(query)
     builds = result.scalars().unique().all()
     
+    user_liked_build_ids = set()
+    if current_user_id:
+        like_query = await db.execute(
+            select(models.BuildLike.build_id)
+            .where(models.BuildLike.user_id == current_user_id)
+            .where(models.BuildLike.build_id.in_([b.id for b in builds]))
+        )
+        user_liked_build_ids = {build_id for build_id, in like_query.all()}
+    
     # Mapear a la respuesta de resumen
-    return [_map_to_summary(b) for b in builds]
+    return [
+        _map_to_summary(
+            b,
+            likes_count=len(b.likes),
+            comments_count=len(b.comments),
+            is_liked=(b.id in user_liked_build_ids)
+        ) for b in builds
+    ]
 
-async def get_community_builds(db: AsyncSession, skip: int = 0, limit: int = 20) -> List[schemas.BuildSummary]:
+
+async def get_community_builds(
+    db: AsyncSession, 
+    skip: int = 0, 
+    limit: int = 20,
+    use_type: Optional[str] = None,
+    cpu: Optional[str] = None,
+    gpu: Optional[str] = None,
+    max_price: Optional[float] = None,
+    current_user_id: Optional[str] = None # <-- MODIFICADO: Añadir user_id
+) -> List[schemas.BuildSummary]:
+    
+    # Subconsulta para contar likes
+    likes_sq = (
+        select(models.BuildLike.build_id, func.count(models.BuildLike.id).label("likes_count"))
+        .group_by(models.BuildLike.build_id)
+        .subquery()
+    )
+    
+    # Subconsulta para contar comentarios
+    comments_sq = (
+        select(models.BuildComment.build_id, func.count(models.BuildComment.id).label("comments_count"))
+        .group_by(models.BuildComment.build_id)
+        .subquery()
+    )
+    
     query = (
-        select(models.Build)
+        select(
+            models.Build,
+            func.coalesce(likes_sq.c.likes_count, 0),
+            func.coalesce(comments_sq.c.comments_count, 0)
+        )
+        .outerjoin(likes_sq, models.Build.id == likes_sq.c.build_id)
+        .outerjoin(comments_sq, models.Build.id == comments_sq.c.build_id)
         .where(models.Build.is_public == True)
+        .options(selectinload(models.Build.components)) # Solo cargamos componentes
+    )
+
+    # --- INICIO DE FILTROS (Sin cambios) ---
+    if use_type and use_type != 'Todos':
+        query = query.where(models.Build.use_type == use_type)
+        
+    if max_price and max_price > 0:
+        query = query.where(models.Build.total_price <= max_price)
+
+    if cpu:
+        query = query.where(models.Build.components.any(
+            (models.BuildComponent.category == 'cpu') &
+            (models.BuildComponent.name.ilike(f"%{cpu}%"))
+        ))
+        
+    if gpu:
+        query = query.where(models.Build.components.any(
+            (models.BuildComponent.category == 'gpu') &
+            (models.BuildComponent.name.ilike(f"%{gpu}%"))
+        ))
+    # --- FIN DE FILTROS ---
+
+    query = (
+        query
         .order_by(models.Build.created_at.desc())
         .offset(skip)
         .limit(limit)
-        .options(joinedload(models.Build.components))
     )
+    
     result = await db.execute(query)
-    builds = result.scalars().unique().all()
+    rows = result.all() # Obtenemos (Build, likes_count, comments_count)
+    
+    build_ids = [row[0].id for row in rows]
+    user_liked_build_ids = set()
+    
+    if current_user_id and build_ids:
+        like_query = await db.execute(
+            select(models.BuildLike.build_id)
+            .where(models.BuildLike.user_id == current_user_id)
+            .where(models.BuildLike.build_id.in_(build_ids))
+        )
+        user_liked_build_ids = {build_id for build_id, in like_query.all()}
 
     # Mapear a la respuesta de resumen
-    return [_map_to_summary(b) for b in builds]
+    return [
+        _map_to_summary(
+            build,
+            likes_count=likes_count,
+            comments_count=comments_count,
+            is_liked=(build.id in user_liked_build_ids)
+        ) for build, likes_count, comments_count in rows
+    ]
+
 
 async def delete_build(db: AsyncSession, build_id: uuid.UUID, user_id: str) -> Optional[models.Build]:
-    db_build = await get_build_by_id(db, build_id) # Reutiliza la función
+    # (Esta función necesita obtener el build primero para verificar el user_id)
+    build_query = await db.execute(
+        select(models.Build).where(models.Build.id == build_id)
+    )
+    db_build = build_query.scalars().first()
+
     if not db_build:
         return None
     
@@ -112,3 +266,51 @@ async def delete_build(db: AsyncSession, build_id: uuid.UUID, user_id: str) -> O
     await db.delete(db_build)
     await db.commit()
     return db_build
+
+# --- NUEVA: Lógica para Likes ---
+
+async def add_like_to_build(db: AsyncSession, build_id: uuid.UUID, user_id: str):
+    existing_like = await db.execute(
+        select(models.BuildLike).filter_by(build_id=build_id, user_id=user_id)
+    )
+    if existing_like.scalars().first():
+        return None 
+
+    db_like = models.BuildLike(build_id=build_id, user_id=user_id)
+    db.add(db_like)
+    await db.commit()
+    await db.refresh(db_like)
+    return db_like
+
+async def remove_like_from_build(db: AsyncSession, build_id: uuid.UUID, user_id: str):
+    stmt = (
+        delete(models.BuildLike)
+        .where(models.BuildLike.build_id == build_id)
+        .where(models.BuildLike.user_id == user_id)
+    )
+    result = await db.execute(stmt)
+    await db.commit()
+    return result.rowcount > 0
+
+# --- NUEVA: Lógica para Comentarios ---
+
+async def create_build_comment(db: AsyncSession, comment: schemas.BuildCommentCreate, build_id: uuid.UUID, user_id: str, user_name: str):
+    db_comment = models.BuildComment(
+        **comment.model_dump(), 
+        build_id=build_id, 
+        user_id=user_id,
+        user_name=user_name
+    )
+    db.add(db_comment)
+    await db.commit()
+    await db.refresh(db_comment)
+    return db_comment
+
+async def get_comments_for_build(db: AsyncSession, build_id: uuid.UUID):
+    query = (
+        select(models.BuildComment)
+        .filter(models.BuildComment.build_id == build_id)
+        .order_by(models.BuildComment.created_at.asc())
+    )
+    result = await db.execute(query)
+    return result.scalars().all()

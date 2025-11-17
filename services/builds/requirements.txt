@@ -5,6 +5,5 @@ alembic
 python-decouple
 sqlalchemy[asyncio]
 asyncpg
-
-# --- ¡AÑADE ESTA LÍNEA! ---
+httpx
 google-generativeai

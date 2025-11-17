@@ -1,11 +1,8 @@
 import 'package:flutter/foundation.dart'; // Para kDebugMode
 
-// Coincide con el schema BuildComponentRead de Pydantic
 class BuildComponent {
   final String id;
-  // --- ¡CORRECCIÓN AQUÍ! ---
-  final int componentId; // ID del servicio de componentes (era String)
-  // --- FIN DE LA CORRECCIÓN ---
+  final int componentId;
   final String category;
   final String name;
   final String? imageUrl;
@@ -47,6 +44,9 @@ class BuildSummary {
   final String? cpuName;
   final String? gpuName;
   final String? ramName;
+  final int likes_count;
+  final int comments_count;
+  final bool is_liked_by_user;
 
   BuildSummary({
     required this.id,
@@ -59,6 +59,9 @@ class BuildSummary {
     this.cpuName,
     this.gpuName,
     this.ramName,
+    required this.likes_count,
+    required this.comments_count,
+    required this.is_liked_by_user,
   });
 
   factory BuildSummary.fromJson(Map<String, dynamic> json) {
@@ -74,6 +77,9 @@ class BuildSummary {
         cpuName: json['cpu_name'] as String?,
         gpuName: json['gpu_name'] as String?,
         ramName: json['ram_name'] as String?,
+        likes_count: json['likes_count'] as int? ?? 0,
+        comments_count: json['comments_count'] as int? ?? 0,
+        is_liked_by_user: json['is_liked_by_user'] as bool? ?? false,
       );
     } catch (e) {
       if (kDebugMode) {

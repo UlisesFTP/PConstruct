@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:my_app/providers/auth_provider.dart'; // <-- IMPORTANTE
 
 // --- Importaciones de Modelos ---
+import '../../models/build_comment.dart';
 import '../../models/posts.dart';
 import '../../models/search_results.dart';
 import '../../models/comment.dart'; // Este es el de Posts
@@ -434,15 +435,79 @@ class ApiClient {
   }
 
   /// Llama a GET /api/v1/builds/community
-  Future<List<BuildSummary>> getCommunityBuilds() async {
+  Future<List<BuildSummary>> getCommunityBuilds({
+    String? useType,
+    String? cpu,
+    String? gpu,
+    double? maxPrice,
+  }) async {
     try {
+      // --- LÓGICA DE FILTROS ---
+      final queryParams = <String, dynamic>{};
+      if (useType != null && useType != 'Todos') {
+        queryParams['use_type'] = useType;
+      }
+      if (cpu != null && cpu.isNotEmpty) {
+        queryParams['cpu'] = cpu;
+      }
+      if (gpu != null && gpu.isNotEmpty) {
+        queryParams['gpu'] = gpu;
+      }
+      if (maxPrice != null && maxPrice > 0) {
+        queryParams['max_price'] = maxPrice;
+      }
+      // --- FIN DE LÓGICA ---
+
       final response = await _dio.get(
         '/api/v1/builds/community',
-      ); // <-- AÑADIR /api/v1
+        queryParameters: queryParams, // <-- Pasa los filtros
+      );
       final List<dynamic> data = response.data;
       return data.map((json) => BuildSummary.fromJson(json)).toList();
     } on DioException catch (e) {
       _handleDioError(e, 'Error al cargar las builds de la comunidad.');
+      rethrow;
+    }
+  }
+
+  Future<void> likeBuild(String buildId) async {
+    try {
+      await _dio.post('/api/v1/builds/$buildId/like');
+    } on DioException catch (e) {
+      _handleDioError(e, 'Error al reaccionar a la build.');
+      rethrow;
+    }
+  }
+
+  Future<void> unlikeBuild(String buildId) async {
+    try {
+      await _dio.delete('/api/v1/builds/$buildId/like');
+    } on DioException catch (e) {
+      _handleDioError(e, 'Error al quitar la reacción.');
+      rethrow;
+    }
+  }
+
+  Future<List<BuildComment>> getBuildComments(String buildId) async {
+    try {
+      final response = await _dio.get('/api/v1/builds/$buildId/comments');
+      final List<dynamic> data = response.data;
+      return data.map((json) => BuildComment.fromJson(json)).toList();
+    } on DioException catch (e) {
+      _handleDioError(e, 'Error al cargar comentarios de la build.');
+      rethrow;
+    }
+  }
+
+  Future<BuildComment> postBuildComment(String buildId, String content) async {
+    try {
+      final response = await _dio.post(
+        '/api/v1/builds/$buildId/comments',
+        data: {'content': content},
+      );
+      return BuildComment.fromJson(response.data);
+    } on DioException catch (e) {
+      _handleDioError(e, 'Error al publicar comentario.');
       rethrow;
     }
   }

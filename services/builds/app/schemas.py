@@ -1,13 +1,13 @@
 # services/builds/app/schemas.py
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, ConfigDict
 import uuid
 import datetime
 from typing import List, Optional, Dict
 from .models import UseTypeEnum # Importamos el Enum
 
-# --- Schemas de Componentes ---
+# --- Schemas de Componentes (sin cambios) ---
 class BuildComponentCreate(BaseModel):
-    component_id: int # Era str
+    component_id: int 
     category: str
     name: str
     image_url: Optional[str] = None
@@ -19,11 +19,30 @@ class BuildComponentRead(BuildComponentCreate):
     class Config:
         from_attributes = True
 
-# --- Schemas de Build ---
+# --- NUEVO: Schemas de Comentarios de Build ---
+class BuildCommentBase(BaseModel):
+    content: str
+
+class BuildCommentCreate(BuildCommentBase):
+    pass
+
+class BuildCommentRead(BuildCommentBase):
+    id: uuid.UUID
+    user_id: str
+    user_name: str
+    build_id: uuid.UUID
+    created_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+# --- FIN DE SCHEMAS DE COMENTARIOS ---
+
+
+# --- Schemas de Build (ACTUALIZADOS) ---
 class BuildCreate(BaseModel):
     name: str
     description: Optional[str] = None
-    use_type: UseTypeEnum # Usamos el Enum
+    use_type: UseTypeEnum 
     image_url: Optional[str] = None
     is_public: bool
     components: List[BuildComponentCreate]
@@ -40,6 +59,11 @@ class BuildRead(BaseModel):
     total_price: float
     created_at: datetime.datetime
     components: List[BuildComponentRead]
+    
+    # --- CAMPOS AÑADIDOS ---
+    likes_count: int = 0
+    comments_count: int = 0
+    is_liked_by_user: bool = False
 
     class Config:
         from_attributes = True
@@ -54,25 +78,22 @@ class BuildSummary(BaseModel):
     created_at: datetime.datetime
     is_public: bool
     
-    # Podríamos añadir los 3 componentes clave si queremos
     cpu_name: Optional[str] = None
     gpu_name: Optional[str] = None
     ram_name: Optional[str] = None
+
+    # --- CAMPOS AÑADIDOS ---
+    likes_count: int = 0
+    comments_count: int = 0
+    is_liked_by_user: bool = False
 
     class Config:
         from_attributes = True
         
         
 class CompatibilityRequest(BaseModel):
-    """
-    Lo que el frontend nos enviará: un diccionario de componentes seleccionados.
-    Ej: {"cpu": "Intel i9", "motherboard": "MSI B760", "ram": "Corsair 32GB"}
-    """
     components: Dict[str, Optional[str]]
 
 class CompatibilityResponse(BaseModel):
-    """
-    Lo que el backend (Gemini) nos devolverá.
-    """
     compatible: bool
     reason: str
