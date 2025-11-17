@@ -384,17 +384,17 @@ class PostsList extends StatelessWidget {
       children: posts.map((post) {
         return Padding(
           padding: const EdgeInsets.only(bottom: 16),
-          child: PostCard(post: post),
+          child: ProfilePostCard(post: post),
         );
       }).toList(),
     );
   }
 }
 
-class PostCard extends StatelessWidget {
+class ProfilePostCard extends StatelessWidget {
   final PostItem post;
 
-  const PostCard({super.key, required this.post});
+  const ProfilePostCard({super.key, required this.post});
 
   @override
   Widget build(BuildContext context) {
