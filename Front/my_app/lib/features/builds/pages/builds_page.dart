@@ -1,16 +1,11 @@
 import 'package:flutter/material.dart';
-import 'dart:ui'; // Necesario para BackdropFilter
+import 'dart:ui';
 import 'package:provider/provider.dart';
 import 'package:my_app/core/api/api_client.dart';
-// Importamos el nuevo modelo y quitamos el mock
 import 'package:my_app/models/build.dart';
-// Para formatear fechas (timeago)
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:my_app/core/widgets/builds_chat.dart';
 import 'package:my_app/core/api/builds_chat_api.dart';
-
-// ❌ Eliminamos la clase mock 'CommunityBuild'
-// class CommunityBuild { ... }
 
 class BuildsPage extends StatefulWidget {
   const BuildsPage({super.key});
@@ -20,7 +15,6 @@ class BuildsPage extends StatefulWidget {
 }
 
 class _BuildsPageState extends State<BuildsPage> {
-  // Controladores de filtros (se mantienen)
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _cpuController = TextEditingController();
   final TextEditingController _gpuController = TextEditingController();
@@ -28,10 +22,6 @@ class _BuildsPageState extends State<BuildsPage> {
   final TextEditingController _ramController = TextEditingController();
   String _selectedUseType = 'Todos';
 
-  // ❌ Eliminamos la lista de datos mock
-  // final List<CommunityBuild> communityBuilds = [ ... ];
-
-  // ¡NUEVO ESTADO!
   late Future<List<BuildSummary>> _buildsFuture;
   late ApiClient _apiClient;
   late final BuildsChatApi _chatApi;
@@ -41,15 +31,11 @@ class _BuildsPageState extends State<BuildsPage> {
     super.initState();
     _apiClient = Provider.of<ApiClient>(context, listen: false);
     _chatApi = BuildsChatApi('http://localhost:8000');
-
-    // Seteamos el idioma para timeago
     timeago.setLocaleMessages('es', timeago.EsMessages());
     _loadBuilds();
   }
 
-  // Nueva función para cargar o refrescar las builds
   void _loadBuilds() {
-    // TODO: Usar los controladores de filtros para la llamada a la API
     setState(() {
       _buildsFuture = _apiClient.getCommunityBuilds();
     });
@@ -65,9 +51,166 @@ class _BuildsPageState extends State<BuildsPage> {
     super.dispose();
   }
 
+  void _showFiltersBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.9,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (_, controller) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF1A1A1C),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[600],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  controller: controller,
+                  padding: const EdgeInsets.all(24),
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Filtros',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    _buildFilterField(
+                      label: 'Tipo de uso',
+                      child: DropdownButtonFormField<String>(
+                        value: _selectedUseType,
+                        decoration: _inputDecoration(),
+                        dropdownColor: const Color(0xFF1C1C1C),
+                        items:
+                            [
+                                  'Todos',
+                                  'Gaming',
+                                  'Oficina',
+                                  'Edición',
+                                  'Programación',
+                                ]
+                                .map(
+                                  (type) => DropdownMenuItem(
+                                    value: type,
+                                    child: Text(type),
+                                  ),
+                                )
+                                .toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedUseType = value!;
+                          });
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildFilterField(
+                      label: 'CPU (contiene)',
+                      child: TextField(
+                        controller: _cpuController,
+                        decoration: _inputDecoration(
+                          hintText: 'Ej: Ryzen 7, i9',
+                        ),
+                        onChanged: (v) => setState(() {}),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildFilterField(
+                      label: 'GPU (contiene)',
+                      child: TextField(
+                        controller: _gpuController,
+                        decoration: _inputDecoration(
+                          hintText: 'Ej: RTX 4070, RX 6800',
+                        ),
+                        onChanged: (v) => setState(() {}),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildFilterField(
+                      label: 'Presupuesto máximo',
+                      child: TextField(
+                        controller: _budgetController,
+                        keyboardType: TextInputType.number,
+                        decoration: _inputDecoration(hintText: '\$ MXN'),
+                        onChanged: (v) => setState(() {}),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildFilterField(
+                      label: 'RAM mínima',
+                      child: TextField(
+                        controller: _ramController,
+                        keyboardType: TextInputType.number,
+                        decoration: _inputDecoration(hintText: 'GB'),
+                        onChanged: (v) => setState(() {}),
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          // TODO: Llamar a _loadBuilds() con los filtros aplicados
+                          print("Aplicar filtros");
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFC7384D),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          "Aplicar Filtros",
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bool showSidebar = MediaQuery.of(context).size.width > 1024;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final bool showSidebar = screenWidth > 1024;
+    final bool isMobile = screenWidth < 768;
+    final bool isTablet = screenWidth >= 768 && screenWidth <= 1024;
 
     return Stack(
       children: [
@@ -76,31 +219,27 @@ class _BuildsPageState extends State<BuildsPage> {
           children: [
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
+                padding: EdgeInsets.all(isMobile ? 16 : 24),
                 child: Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 896),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Header (se mantiene igual)
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'Builds de la comunidad',
-                              style: TextStyle(
-                                fontSize: 28,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
+                        // Header responsive
+                        if (isMobile) ...[
+                          const Text(
+                            'Builds de la comunidad',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
                             ),
-                            const SizedBox(width: 16),
-                            Flexible(
-                              child: Container(
-                                constraints: const BoxConstraints(
-                                  maxWidth: 300,
-                                ),
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
                                 child: TextField(
                                   controller: _searchController,
                                   decoration: _inputDecoration(
@@ -111,16 +250,105 @@ class _BuildsPageState extends State<BuildsPage> {
                                   },
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 32),
+                              const SizedBox(width: 8),
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFC7384D),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: IconButton(
+                                  icon: const Icon(
+                                    Icons.filter_list,
+                                    color: Colors.white,
+                                  ),
+                                  onPressed: _showFiltersBottomSheet,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ] else if (isTablet) ...[
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Expanded(
+                                    child: Text(
+                                      'Builds de la comunidad',
+                                      style: TextStyle(
+                                        fontSize: 26,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFC7384D),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: IconButton(
+                                      icon: const Icon(
+                                        Icons.filter_list,
+                                        color: Colors.white,
+                                      ),
+                                      onPressed: _showFiltersBottomSheet,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              TextField(
+                                controller: _searchController,
+                                decoration: _inputDecoration(
+                                  hintText: 'Buscar builds...',
+                                ),
+                                onChanged: (value) {
+                                  // TODO: Implementar debouncing y búsqueda
+                                },
+                              ),
+                            ],
+                          ),
+                        ] else ...[
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Builds de la comunidad',
+                                style: TextStyle(
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Flexible(
+                                child: Container(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 300,
+                                  ),
+                                  child: TextField(
+                                    controller: _searchController,
+                                    decoration: _inputDecoration(
+                                      hintText: 'Buscar builds...',
+                                    ),
+                                    onChanged: (value) {
+                                      // TODO: Implementar debouncing y búsqueda
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        SizedBox(height: isMobile ? 24 : 32),
 
-                        // ¡NUEVO: FUTURE BUILDER!
+                        // FutureBuilder
                         FutureBuilder<List<BuildSummary>>(
                           future: _buildsFuture,
                           builder: (context, snapshot) {
-                            // 1. Estado de Carga
                             if (snapshot.connectionState ==
                                 ConnectionState.waiting) {
                               return const Center(
@@ -130,7 +358,6 @@ class _BuildsPageState extends State<BuildsPage> {
                                 ),
                               );
                             }
-                            // 2. Estado de Error
                             if (snapshot.hasError) {
                               return Center(
                                 child: Padding(
@@ -143,7 +370,6 @@ class _BuildsPageState extends State<BuildsPage> {
                                 ),
                               );
                             }
-                            // 3. Estado sin Datos
                             if (!snapshot.hasData || snapshot.data!.isEmpty) {
                               return Center(
                                 child: Padding(
@@ -157,7 +383,6 @@ class _BuildsPageState extends State<BuildsPage> {
                               );
                             }
 
-                            // 4. Estado con Datos
                             final builds = snapshot.data!;
                             return ListView.builder(
                               shrinkWrap: true,
@@ -165,20 +390,20 @@ class _BuildsPageState extends State<BuildsPage> {
                               itemCount: builds.length,
                               itemBuilder: (context, index) {
                                 return Padding(
-                                  padding: const EdgeInsets.only(bottom: 24.0),
-
-                                  // --- ¡CORRECCIÓN AQUÍ! ---
-                                  // Se pasa como un argumento posicional, no nombrado.
-                                  child: _CommunityBuildCard(
-                                    builds[index], // <-- Se quita 'build:'
+                                  padding: EdgeInsets.only(
+                                    bottom: isMobile ? 16.0 : 24.0,
                                   ),
-
-                                  // --- FIN DE LA CORRECCIÓN ---
+                                  child: _CommunityBuildCard(
+                                    builds[index],
+                                    isMobile: isMobile,
+                                  ),
                                 );
                               },
                             );
                           },
                         ),
+                        // Espacio adicional en móvil para los FABs
+                        if (isMobile) const SizedBox(height: 80),
                       ],
                     ),
                   ),
@@ -188,77 +413,144 @@ class _BuildsPageState extends State<BuildsPage> {
             if (showSidebar) _buildSidebar(),
           ],
         ),
-        // Botón FAB (se mantiene igual)
 
-        // === FAB de Chat (izquierda del +) ===
-        Positioned(
-          bottom: 24,
-          right: 96, // 24 (margen) + 60 (ancho del +) + 12 (espacio)
-          child: SizedBox(
-            width: 60,
-            height: 60,
-            child: Material(
-              color: const Color(0xFFC7384D),
-              shape: const CircleBorder(),
-              elevation: 6,
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: () {
-                  showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    backgroundColor: Colors.transparent,
-                    builder: (_) => BuildsChatSheet(api: _chatApi),
-                  );
-                },
-                child: const Center(
-                  child: Icon(Icons.chat_bubble, color: Colors.white, size: 28),
+        // FABs responsivos
+        if (isMobile) ...[
+          // Chat FAB (móvil - izquierda)
+          Positioned(
+            bottom: 16,
+            left: 16,
+            child: SizedBox(
+              width: 56,
+              height: 56,
+              child: Material(
+                color: const Color(0xFFC7384D),
+                shape: const CircleBorder(),
+                elevation: 6,
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () {
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (_) => BuildsChatSheet(api: _chatApi),
+                    );
+                  },
+                  child: const Center(
+                    child: Icon(
+                      Icons.chat_bubble,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-
-        Positioned(
-          bottom: 24,
-          right: 24,
-          child: Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: const Color(0xFFC7384D),
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFC7384D).withOpacity(0.4),
-                  blurRadius: 20,
-                  spreadRadius: 0,
-                ),
-              ],
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () {
-                  Navigator.pushNamed(context, '/builds/create');
-                },
-                customBorder: const CircleBorder(),
-                child: const Center(
-                  child: Icon(Icons.add, color: Colors.white, size: 32),
+          // Add FAB (móvil - derecha)
+          Positioned(
+            bottom: 16,
+            right: 16,
+            child: Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: const Color(0xFFC7384D),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFC7384D).withOpacity(0.4),
+                    blurRadius: 20,
+                    spreadRadius: 0,
+                  ),
+                ],
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    Navigator.pushNamed(context, '/builds/create');
+                  },
+                  customBorder: const CircleBorder(),
+                  child: const Center(
+                    child: Icon(Icons.add, color: Colors.white, size: 28),
+                  ),
                 ),
               ),
             ),
           ),
-        ),
+        ] else ...[
+          // Chat FAB (tablet/desktop)
+          Positioned(
+            bottom: 24,
+            right: 96,
+            child: SizedBox(
+              width: 60,
+              height: 60,
+              child: Material(
+                color: const Color(0xFFC7384D),
+                shape: const CircleBorder(),
+                elevation: 6,
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () {
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (_) => BuildsChatSheet(api: _chatApi),
+                    );
+                  },
+                  child: const Center(
+                    child: Icon(
+                      Icons.chat_bubble,
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Add FAB (tablet/desktop)
+          Positioned(
+            bottom: 24,
+            right: 24,
+            child: Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: const Color(0xFFC7384D),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFC7384D).withOpacity(0.4),
+                    blurRadius: 20,
+                    spreadRadius: 0,
+                  ),
+                ],
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    Navigator.pushNamed(context, '/builds/create');
+                  },
+                  customBorder: const CircleBorder(),
+                  child: const Center(
+                    child: Icon(Icons.add, color: Colors.white, size: 32),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
 
-  // --- WIDGETS INTERNOS (MODIFICADOS) ---
-
-  // ¡WIDGET DE TARJETA ACTUALIZADO!
-  // La definición es correcta (acepta un argumento posicional)
-  Widget _CommunityBuildCard(BuildSummary build) {
+  Widget _CommunityBuildCard(BuildSummary build, {required bool isMobile}) {
     final timeAgoString = timeago.format(
       build.createdAt.toLocal(),
       locale: 'es',
@@ -267,71 +559,73 @@ class _BuildsPageState extends State<BuildsPage> {
     return Container(
       decoration: BoxDecoration(
         color: const Color.fromRGBO(28, 28, 28, 0.8),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(isMobile ? 12 : 16),
         border: Border.all(color: const Color(0xFF2A2A2A)),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(isMobile ? 12 : 16),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.all(isMobile ? 16 : 24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header (Avatar, Nombre de Usuario, Tiempo)
+                // Header
                 Row(
                   children: [
-                    // TODO: Reemplazar con avatar real cuando esté en la API
-                    const CircleAvatar(radius: 24, child: Icon(Icons.person)),
-                    const SizedBox(width: 16),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          build.userName, // <-- Dato real
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                    CircleAvatar(
+                      radius: isMobile ? 20 : 24,
+                      child: const Icon(Icons.person),
+                    ),
+                    SizedBox(width: isMobile ? 12 : 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            build.userName,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              fontSize: isMobile ? 14 : 16,
+                            ),
                           ),
-                        ),
-                        Text(
-                          timeAgoString, // <-- Dato real (formateado)
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFFA0A0A0),
+                          Text(
+                            timeAgoString,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFFA0A0A0),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                // Título de la build
+                SizedBox(height: isMobile ? 12 : 16),
+                // Título
                 Text(
-                  build.name, // <-- Dato real (es el 'title' de la build)
-                  style: const TextStyle(
-                    fontSize: 20,
+                  build.name,
+                  style: TextStyle(
+                    fontSize: isMobile ? 18 : 20,
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
                   ),
                 ),
-
-                // ❌ Descripción eliminada (no está en BuildSummary)
-
-                // Imagen (si existe)
+                // Imagen
                 if (build.imageUrl != null && build.imageUrl!.isNotEmpty) ...[
-                  const SizedBox(height: 16),
+                  SizedBox(height: isMobile ? 12 : 16),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(12),
                     child: Image.network(
-                      build.imageUrl!, // <-- Dato real
+                      build.imageUrl!,
                       width: double.infinity,
-                      height: 200,
+                      height: isMobile ? 180 : 200,
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) {
                         return Container(
-                          height: 200,
+                          height: isMobile ? 180 : 200,
                           color: Colors.grey[800],
                           child: const Center(
                             child: Icon(
@@ -345,64 +639,84 @@ class _BuildsPageState extends State<BuildsPage> {
                     ),
                   ),
                 ],
-
-                // ¡NUEVO: Componentes clave!
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 16,
-                  runSpacing: 12,
-                  children: [
-                    _buildSpec(Icons.memory, 'CPU:', build.cpuName ?? 'N/A'),
-                    _buildSpec(
-                      Icons.developer_board,
-                      'GPU:',
-                      build.gpuName ?? 'N/A',
-                    ),
-                    _buildSpec(Icons.dns, 'RAM:', build.ramName ?? 'N/A'),
-                  ],
-                ),
-
-                // Footer (Likes / Ver Detalles)
-                const SizedBox(height: 16),
+                SizedBox(height: isMobile ? 12 : 16),
+                // Componentes clave
+                if (isMobile)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildSpec(
+                        Icons.memory,
+                        'CPU:',
+                        build.cpuName ?? 'N/A',
+                        isMobile: true,
+                      ),
+                      const SizedBox(height: 8),
+                      _buildSpec(
+                        Icons.developer_board,
+                        'GPU:',
+                        build.gpuName ?? 'N/A',
+                        isMobile: true,
+                      ),
+                      const SizedBox(height: 8),
+                      _buildSpec(
+                        Icons.dns,
+                        'RAM:',
+                        build.ramName ?? 'N/A',
+                        isMobile: true,
+                      ),
+                    ],
+                  )
+                else
+                  Wrap(
+                    spacing: 16,
+                    runSpacing: 12,
+                    children: [
+                      _buildSpec(Icons.memory, 'CPU:', build.cpuName ?? 'N/A'),
+                      _buildSpec(
+                        Icons.developer_board,
+                        'GPU:',
+                        build.gpuName ?? 'N/A',
+                      ),
+                      _buildSpec(Icons.dns, 'RAM:', build.ramName ?? 'N/A'),
+                    ],
+                  ),
+                SizedBox(height: isMobile ? 12 : 16),
+                // Footer
                 Container(
-                  padding: const EdgeInsets.only(top: 16),
+                  padding: EdgeInsets.only(top: isMobile ? 12 : 16),
                   decoration: const BoxDecoration(
                     border: Border(top: BorderSide(color: Color(0xFF2A2A2A))),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // TODO: Añadir 'likes' al backend y conectarlo aquí
-                      Row(
-                        children: const [
+                      const Row(
+                        children: [
                           Icon(
                             Icons.whatshot,
-                            color: Color(0xFFA0A0A0), // Apagado por ahora
+                            color: Color(0xFFA0A0A0),
                             size: 20,
                           ),
                           SizedBox(width: 8),
-                          Text(
-                            '0', // Placeholder
-                            style: TextStyle(color: Color(0xFFA0A0A0)),
-                          ),
+                          Text('0', style: TextStyle(color: Color(0xFFA0A0A0))),
                         ],
                       ),
                       InkWell(
                         onTap: () {
                           // TODO: Navegar al detalle de la build
-                          // Navigator.pushNamed(context, '/build-detail', arguments: build.id);
                         },
                         child: Row(
-                          children: const [
-                            Icon(
+                          children: [
+                            const Icon(
                               Icons.visibility,
                               color: Color(0xFFA0A0A0),
                               size: 20,
                             ),
-                            SizedBox(width: 8),
+                            const SizedBox(width: 8),
                             Text(
-                              'Ver Detalles',
-                              style: TextStyle(color: Color(0xFFA0A0A0)),
+                              isMobile ? 'Ver' : 'Ver Detalles',
+                              style: const TextStyle(color: Color(0xFFA0A0A0)),
                             ),
                           ],
                         ),
@@ -418,26 +732,33 @@ class _BuildsPageState extends State<BuildsPage> {
     );
   }
 
-  // Helper para mostrar specs (copiado de my_builds_page)
-  Widget _buildSpec(IconData icon, String label, String value) {
+  Widget _buildSpec(
+    IconData icon,
+    String label,
+    String value, {
+    bool isMobile = false,
+  }) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, color: const Color(0xFFC7384D), size: 20),
-        const SizedBox(width: 8),
+        Icon(icon, color: const Color(0xFFC7384D), size: isMobile ? 18 : 20),
+        SizedBox(width: isMobile ? 6 : 8),
         Text(
           label,
-          style: const TextStyle(
-            color: Color(0xFFE0E0E0),
+          style: TextStyle(
+            color: const Color(0xFFE0E0E0),
             fontWeight: FontWeight.w600,
-            fontSize: 14,
+            fontSize: isMobile ? 13 : 14,
           ),
         ),
-        const SizedBox(width: 4),
+        SizedBox(width: isMobile ? 3 : 4),
         Flexible(
           child: Text(
             value,
-            style: const TextStyle(color: Color(0xFFE0E0E0), fontSize: 14),
+            style: TextStyle(
+              color: const Color(0xFFE0E0E0),
+              fontSize: isMobile ? 13 : 14,
+            ),
             overflow: TextOverflow.ellipsis,
           ),
         ),
@@ -445,9 +766,7 @@ class _BuildsPageState extends State<BuildsPage> {
     );
   }
 
-  // Sidebar (sin cambios)
   Widget _buildSidebar() {
-    // ... (Tu código de _buildSidebar se mantiene igual)
     return Container(
       width: 288,
       decoration: BoxDecoration(
@@ -469,11 +788,10 @@ class _BuildsPageState extends State<BuildsPage> {
             ),
             const SizedBox(height: 24),
             _buildFilterField(
-              // Can call other state methods
               label: 'Tipo de uso',
               child: DropdownButtonFormField<String>(
-                value: _selectedUseType, // Access state variable
-                decoration: _inputDecoration(), // Call state method
+                value: _selectedUseType,
+                decoration: _inputDecoration(),
                 dropdownColor: const Color(0xFF1C1C1C),
                 items: ['Todos', 'Gaming', 'Oficina', 'Edición', 'Programación']
                     .map(
@@ -492,7 +810,7 @@ class _BuildsPageState extends State<BuildsPage> {
             _buildFilterField(
               label: 'CPU (contiene)',
               child: TextField(
-                controller: _cpuController, // Access state variable
+                controller: _cpuController,
                 decoration: _inputDecoration(hintText: 'Ej: Ryzen 7, i9'),
                 onChanged: (v) => setState(() {}),
               ),
@@ -501,7 +819,7 @@ class _BuildsPageState extends State<BuildsPage> {
             _buildFilterField(
               label: 'GPU (contiene)',
               child: TextField(
-                controller: _gpuController, // Access state variable
+                controller: _gpuController,
                 decoration: _inputDecoration(hintText: 'Ej: RTX 4070, RX 6800'),
                 onChanged: (v) => setState(() {}),
               ),
@@ -510,7 +828,7 @@ class _BuildsPageState extends State<BuildsPage> {
             _buildFilterField(
               label: 'Presupuesto máximo',
               child: TextField(
-                controller: _budgetController, // Access state variable
+                controller: _budgetController,
                 keyboardType: TextInputType.number,
                 decoration: _inputDecoration(hintText: '\$ MXN'),
                 onChanged: (v) => setState(() {}),
@@ -520,7 +838,7 @@ class _BuildsPageState extends State<BuildsPage> {
             _buildFilterField(
               label: 'RAM mínima',
               child: TextField(
-                controller: _ramController, // Access state variable
+                controller: _ramController,
                 keyboardType: TextInputType.number,
                 decoration: _inputDecoration(hintText: 'GB'),
                 onChanged: (v) => setState(() {}),
@@ -554,7 +872,6 @@ class _BuildsPageState extends State<BuildsPage> {
     );
   }
 
-  // _buildFilterField (sin cambios)
   Widget _buildFilterField({required String label, required Widget child}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -569,7 +886,6 @@ class _BuildsPageState extends State<BuildsPage> {
     );
   }
 
-  // _inputDecoration (sin cambios)
   InputDecoration _inputDecoration({String? hintText}) {
     return InputDecoration(
       hintText: hintText,
