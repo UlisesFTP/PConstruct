@@ -86,6 +86,8 @@ class BuildSummary(BaseModel):
     likes_count: int = 0
     comments_count: int = 0
     is_liked_by_user: bool = False
+    
+    user_avatar_url: Optional[str] = None
 
     class Config:
         from_attributes = True

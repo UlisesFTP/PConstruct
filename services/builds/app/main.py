@@ -74,15 +74,19 @@ async def create_new_build(
 ):
     db_build = await crud.create_build(db=db, build=build, user_id=x_user_id, user_name=x_user_name)
     
-    author_info = await _get_author_info([x_user_id])
-    avatar_url = author_info.get(x_user_id, {}).get("avatar_url")
+    # --- INICIO DE LÍNEAS A ELIMINAR ---
+    # author_info = await _get_author_info([x_user_id])
+    # avatar_url = author_info.get(x_user_id, {}).get("avatar_url")
+    # --- FIN DE LÍNEAS A ELIMINAR ---
 
     build_data = schemas.BuildRead.model_validate(db_build)
 
     build_data.likes_count = 0 
     build_data.comments_count = 0 
     build_data.is_liked_by_user = False 
-    build_data.user_avatar_url = avatar_url
+    
+    # --- ELIMINA ESTA LÍNEA ---
+    # build_data.user_avatar_url = avatar_url
 
     return build_data
 
@@ -125,8 +129,15 @@ async def read_build_detail(
     db_build = await crud.get_build_by_id(db=db, build_id=build_id, current_user_id=current_user_id)
     if db_build is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Build not found")
+    
+    # --- LÓGICA AÑADIDA ---
+    # db_build ya es un schema BuildRead, y tiene el user_id
+    author_info = await _get_author_info([db_build.user_id])
+    avatar_url = author_info.get(db_build.user_id, {}).get("avatar_url")
+    db_build.user_avatar_url = avatar_url
+    # --- FIN DE LÓGICA AÑADIDA ---
+    
     return db_build # <-- db_build ya es un schema BuildRead
-
 @app.delete("/api/v1/builds/{build_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user_build(
     build_id: uuid.UUID,

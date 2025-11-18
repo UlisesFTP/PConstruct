@@ -223,6 +223,7 @@ async def get_build_comments(
 # --- RUTAS DE GEMINI (sin cambios) ---
 @router.post("/check-compatibility", response_model=None)
 async def check_compatibility(request: Request):
+    # (Te recomiendo aplicar la misma lógica de timeout aquí)
     return await forward_request(
         request=request,
         target_url=f"{BUILD_SERVICE_URL}/api/v1/builds/check-compatibility"
@@ -230,8 +231,45 @@ async def check_compatibility(request: Request):
     
 @router.post("/chat", response_model=None)
 async def chat(request: Request):
-    return await forward_request(
-        request=request,
-        target_url=f"{BUILD_SERVICE_URL}/api/v1/builds/chat",
-        custom_headers={"X-Forward-Timeout": "30"}
-    )
+    # Definimos un timeout largo, 30s es lo que espera tu app
+    CHAT_TIMEOUT = 30.0
+
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+
+    # Usamos httpx.AsyncClient directamente
+    async with httpx.AsyncClient() as client:
+        try:
+            target_url = f"{BUILD_SERVICE_URL}/api/v1/builds/chat"
+            
+            # Pasamos los headers originales de la app (auth, etc.)
+            # Excluimos 'host' y 'content-length' que son manejados por httpx
+            fwd_headers = {
+                k: v for k, v in request.headers.items() 
+                if k.lower() not in ('host', 'content-length', 'content-type')
+            }
+            # Aseguramos el content-type
+            fwd_headers['Content-Type'] = 'application/json'
+
+            response = await client.post(
+                target_url,
+                json=data,
+                headers=fwd_headers,
+                timeout=CHAT_TIMEOUT # <-- ¡Aquí está la corrección!
+            )
+            response.raise_for_status()
+            
+            # Devolvemos la respuesta del servicio de builds
+            return response.json()
+
+        except httpx.TimeoutException:
+            logger.error(f"Timeout (>{CHAT_TIMEOUT}s) con el servicio de chat: {target_url}")
+            raise HTTPException(status_code=504, detail="El servicio de chat tardó demasiado en responder.")
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Error del servicio de builds (chat): {e.response.status_code} - {e.response.text}")
+            raise HTTPException(status_code=e.response.status_code, detail=e.response.json())
+        except Exception as e:
+            logger.error(f"Error inesperado en forward de chat: {str(e)}")
+            raise HTTPException(status_code=503, detail="Servicio de chat no disponible")

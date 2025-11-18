@@ -17,6 +17,7 @@ class MyBuildsPage extends StatefulWidget {
 class _MyBuildsPageState extends State<MyBuildsPage> {
   late Future<List<BuildSummary>> _buildsFuture;
   late ApiClient _apiClient;
+  bool _isDeleting = false;
 
   @override
   void initState() {
@@ -32,6 +33,11 @@ class _MyBuildsPageState extends State<MyBuildsPage> {
   }
 
   Future<void> _deleteBuild(String buildId) async {
+    if (_isDeleting) return;
+
+    setState(() {
+      _isDeleting = true; // Bloquea nuevos clics
+    });
     final bool confirm =
         await showDialog(
           context: context,
@@ -82,7 +88,19 @@ class _MyBuildsPageState extends State<MyBuildsPage> {
             backgroundColor: Colors.red,
           ),
         );
+      } finally {
+        // --- AÑADE EL BLOQUE FINALLY ---
+        // Sin importar si tuvo éxito o falló, desbloquea los botones.
+        setState(() {
+          _isDeleting = false;
+        });
       }
+    } else {
+      // --- AÑADE EL ELSE ---
+      // Si el usuario presiona "Cancelar", también debemos desbloquear.
+      setState(() {
+        _isDeleting = false;
+      });
     }
   }
 

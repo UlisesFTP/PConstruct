@@ -133,11 +133,27 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
   }
 
   Future<void> _handleCreateBuild(bool isPublic) async {
+    // 1. La guarda principal se mantiene.
+    if (_isSaving) return;
+
+    // --- ¡INICIO DE LA CORRECCIÓN! ---
+    // 2. Establece la variable síncronamente AHORA.
+    _isSaving = true;
+
+    // 3. Llama a setState VACÍO solo para que la UI
+    //    reaccione y deshabilite los botones.
+    setState(() {});
+    // --- FIN DE LA CORRECCIÓN! ---
+
     final buildDetails = await _showNameAndTypeDialog();
-    if (buildDetails == null) return;
 
-    setState(() => _isSaving = true);
-
+    if (buildDetails == null) {
+      // 4. Si el usuario cancela, resetea la variable síncronamente
+      _isSaving = false;
+      // 5. Y actualiza la UI para rehabilitar los botones.
+      setState(() {});
+      return;
+    }
     try {
       final List<BuildComponentCreate> componentsToCreate = selectedComponents
           .entries
@@ -162,7 +178,6 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
         description: "",
         imageUrl: "",
       );
-
       await _apiClient.createBuild(buildData);
 
       if (!mounted) return;
@@ -185,6 +200,7 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
         ),
       );
     } finally {
+      // 7. El 'finally' desbloquea la UI en caso de éxito o error.
       if (mounted) setState(() => _isSaving = false);
     }
   }

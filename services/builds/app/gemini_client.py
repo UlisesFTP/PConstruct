@@ -213,7 +213,8 @@ async def chat_reply(history: list[dict], message: str, timeout_s: int = 25) -> 
 
     gen_cfg = {"temperature": 0.7, "top_p": 0.9, "top_k": 40, "max_output_tokens": 512}
     models = [
-        os.getenv("GEMINI_MODEL", "").strip() or "gemini-2.5-flash"
+        os.getenv("GEMINI_MODEL", "").strip() or "gemini-2.5-flash",
+        "gemini-2.5-pro", "gemini-2.5-flash-lite"
    
     ]
 
