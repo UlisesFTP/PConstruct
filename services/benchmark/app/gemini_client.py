@@ -16,7 +16,7 @@ def _get_model():
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY no configurado")
     genai.configure(api_key=api_key)
-    model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash") 
+    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-pro") 
     return genai.GenerativeModel(
         model_name,
         generation_config={"response_mime_type": "application/json"}

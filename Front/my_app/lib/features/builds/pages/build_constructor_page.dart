@@ -10,8 +10,12 @@ import 'dart:async';
 import 'package:my_app/core/widgets/builds_chat.dart';
 import 'package:my_app/core/api/builds_chat_api.dart';
 
+// --- VARIABLE GLOBAL DE BLOQUEO (Fuera de la clase) ---
+// Esto evita duplicados incluso si la pantalla se reconstruye.
+DateTime? _globalBuildSubmissionTime;
+
 class BuildConstructorPage extends StatefulWidget {
-  BuildConstructorPage({super.key});
+  const BuildConstructorPage({super.key});
 
   @override
   State<BuildConstructorPage> createState() => _BuildConstructorPageState();
@@ -20,9 +24,18 @@ class BuildConstructorPage extends StatefulWidget {
 class _BuildConstructorPageState extends State<BuildConstructorPage> {
   late ApiClient _apiClient;
   late final BuildsChatApi _chatApi;
+
   bool _isSaving = false;
   bool _isCheckingCompatibility = false;
+
+  // --- AQUÍ ESTÁ LA VARIABLE QUE FALTABA ---
   Timer? _debounce;
+  // ----------------------------------------
+
+  // Controladores para el formulario inline
+  final TextEditingController _buildNameController = TextEditingController();
+  String _selectedBuildType = 'Gaming';
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
   final Map<String, Future<PaginatedComponentsResponse>> _componentFutures = {};
 
@@ -37,7 +50,6 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
     'gabinete': Icons.desktop_windows_outlined,
     'psu': Icons.power,
     'fans': Icons.wind_power,
-    'os': Icons.computer,
   };
 
   final Map<String, String> apiCategoryMap = {
@@ -80,6 +92,14 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
     decimalDigits: 0,
   );
 
+  final List<String> useTypes = [
+    'Gaming',
+    'Oficina',
+    'Edición',
+    'Programación',
+    'Otro',
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -98,7 +118,8 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
 
   @override
   void dispose() {
-    _debounce?.cancel();
+    _debounce?.cancel(); // Ahora sí encontrará la variable
+    _buildNameController.dispose();
     searchControllers.values.forEach((controller) => controller.dispose());
     minPriceControllers.values.forEach((controller) => controller.dispose());
     maxPriceControllers.values.forEach((controller) => controller.dispose());
@@ -132,28 +153,47 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
     });
   }
 
+  // --- FUNCIÓN BLINDADA DE GUARDADO ---
   Future<void> _handleCreateBuild(bool isPublic) async {
-    // 1. La guarda principal se mantiene.
-    if (_isSaving) return;
-
-    // --- ¡INICIO DE LA CORRECCIÓN! ---
-    // 2. Establece la variable síncronamente AHORA.
-    _isSaving = true;
-
-    // 3. Llama a setState VACÍO solo para que la UI
-    //    reaccione y deshabilite los botones.
-    setState(() {});
-    // --- FIN DE LA CORRECCIÓN! ---
-
-    final buildDetails = await _showNameAndTypeDialog();
-
-    if (buildDetails == null) {
-      // 4. Si el usuario cancela, resetea la variable síncronamente
-      _isSaving = false;
-      // 5. Y actualiza la UI para rehabilitar los botones.
-      setState(() {});
+    // 1. BLOQUEO GLOBAL DE TIEMPO (3 segundos)
+    final now = DateTime.now();
+    if (_globalBuildSubmissionTime != null &&
+        now.difference(_globalBuildSubmissionTime!) <
+            const Duration(seconds: 3)) {
+      print("🚫 Intento de duplicación bloqueado globalmente.");
       return;
     }
+    _globalBuildSubmissionTime = now;
+
+    if (_isSaving) return;
+
+    // Validaciones
+    if (_buildNameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Por favor, asigna un nombre a tu build (abajo de Fans).',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      _globalBuildSubmissionTime = null; // Resetear para permitir reintentar
+      return;
+    }
+
+    if (selectedComponents.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selecciona al menos un componente.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      _globalBuildSubmissionTime = null; // Resetear para permitir reintentar
+      return;
+    }
+
+    setState(() => _isSaving = true);
+
     try {
       final List<BuildComponentCreate> componentsToCreate = selectedComponents
           .entries
@@ -171,13 +211,14 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
           .toList();
 
       final buildData = BuildCreate(
-        name: buildDetails['name']!,
-        useType: buildDetails['useType']!,
+        name: _buildNameController.text.trim(),
+        useType: _selectedBuildType,
         isPublic: isPublic,
         components: componentsToCreate,
         description: "",
         imageUrl: "",
       );
+
       await _apiClient.createBuild(buildData);
 
       if (!mounted) return;
@@ -195,107 +236,15 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al guardar la build: $e'),
+          content: Text('Error al guardar: $e'),
           backgroundColor: Colors.red,
         ),
       );
+      // Resetear bloqueo si falló
+      _globalBuildSubmissionTime = null;
     } finally {
-      // 7. El 'finally' desbloquea la UI en caso de éxito o error.
       if (mounted) setState(() => _isSaving = false);
     }
-  }
-
-  Future<Map<String, String>?> _showNameAndTypeDialog() async {
-    final _formKey = GlobalKey<FormState>();
-    final _nameController = TextEditingController();
-    String _selectedUseType = 'Gaming';
-
-    final List<String> useTypes = [
-      'Gaming',
-      'Oficina',
-      'Edición',
-      'Programación',
-      'Otro',
-    ];
-
-    return showDialog<Map<String, String>?>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              backgroundColor: const Color(0xFF1A1A1C),
-              title: Text(
-                'Detalles de la Build',
-                style: TextStyle(color: Colors.white),
-              ),
-              content: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextFormField(
-                      controller: _nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Nombre de la Build',
-                      ),
-                      validator: (value) =>
-                          value!.isEmpty ? 'El nombre es requerido' : null,
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      value: _selectedUseType,
-                      decoration: const InputDecoration(
-                        labelText: 'Tipo de Uso',
-                      ),
-                      dropdownColor: const Color(0xFF1C1C1C),
-                      items: useTypes
-                          .map(
-                            (type) => DropdownMenuItem(
-                              value: type,
-                              child: Text(type),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        if (value != null) {
-                          setDialogState(() => _selectedUseType = value);
-                        }
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  child: Text(
-                    'Cancelar',
-                    style: TextStyle(color: Colors.grey[400]),
-                  ),
-                  onPressed: () => Navigator.of(context).pop(null),
-                ),
-                ElevatedButton(
-                  child: const Text('Confirmar'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).primaryColor,
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: () {
-                    if (_formKey.currentState!.validate()) {
-                      Navigator.of(context).pop({
-                        'name': _nameController.text,
-                        'useType': _selectedUseType,
-                      });
-                    }
-                  },
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
   }
 
   Future<void> _runCompatibilityCheck() async {
@@ -304,9 +253,7 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
     final cpu = selectedComponents['cpu']?.name;
     final motherboard = selectedComponents['motherboard']?.name;
 
-    if (cpu == null || motherboard == null) {
-      return;
-    }
+    if (cpu == null || motherboard == null) return;
 
     if (mounted) setState(() => _isCheckingCompatibility = true);
 
@@ -325,67 +272,26 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
       if (!response.compatible) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.warning_amber_rounded, color: Colors.white),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Advertencia: ${response.reason}',
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                ),
-              ],
-            ),
+            content: Text('Advertencia: ${response.reason}'),
             backgroundColor: Colors.red.shade600,
-            duration: const Duration(seconds: 8),
-            showCloseIcon: true,
-            closeIconColor: Colors.white,
+            duration: const Duration(seconds: 6),
             behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.all(16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
           ),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle_outline, color: Colors.white),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    response.reason,
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                ),
-              ],
-            ),
+            content: Text(response.reason),
             backgroundColor: Colors.green.shade600,
             duration: const Duration(seconds: 3),
             behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.all(16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
           ),
         );
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al contactar el servicio de validación: $e'),
-            backgroundColor: Colors.grey[800],
-          ),
-        );
-      }
+      // Error silencioso
     } finally {
-      if (mounted) {
-        setState(() => _isCheckingCompatibility = false);
-      }
+      if (mounted) setState(() => _isCheckingCompatibility = false);
     }
   }
 
@@ -402,7 +308,6 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final isDesktop = size.width > 900;
-    final isTablet = size.width > 600 && size.width <= 900;
     final isMobile = size.width <= 600;
     final theme = Theme.of(context);
 
@@ -419,36 +324,119 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Header adaptativo
                       _buildHeader(theme, isMobile),
                       SizedBox(height: isMobile ? 16 : 32),
-
-                      // Lista de componentes
                       Column(
                         children: apiCategoryMap.keys.map((typeKey) {
                           return _buildComponentSection(typeKey, isMobile);
                         }).toList(),
                       ),
-
-                      // Espacio adicional en móvil para el FAB
+                      SizedBox(height: isMobile ? 16 : 24),
+                      _buildBuildDetailsSection(theme, isMobile),
                       if (isMobile) const SizedBox(height: 80),
                     ],
                   ),
                 ),
               ),
-
-              // Sidebar solo en desktop
               if (isDesktop) SizedBox(width: 350, child: _buildSidebar()),
             ],
           ),
-
-          // FAB flotante en móvil/tablet
           if (!isDesktop)
             Positioned(
               bottom: 16,
               right: 16,
               child: _buildFloatingActionButton(),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBuildDetailsSection(ThemeData theme, bool isMobile) {
+    return Container(
+      padding: EdgeInsets.all(isMobile ? 16 : 24),
+      decoration: BoxDecoration(
+        color: theme.cardColor.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.primaryColor.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.settings_suggest, color: theme.primaryColor, size: 24),
+              const SizedBox(width: 12),
+              const Text(
+                'Detalles de la Build',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Form(
+            key: _formKey,
+            child: Column(
+              children: [
+                TextFormField(
+                  controller: _buildNameController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Nombre de la Build',
+                    labelStyle: const TextStyle(color: Colors.grey),
+                    prefixIcon: const Icon(Icons.edit, color: Colors.grey),
+                    filled: true,
+                    fillColor: Colors.black.withOpacity(0.3),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[800]!),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: theme.primaryColor),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: _selectedBuildType,
+                  decoration: InputDecoration(
+                    labelText: 'Tipo de Uso',
+                    labelStyle: const TextStyle(color: Colors.grey),
+                    prefixIcon: const Icon(Icons.category, color: Colors.grey),
+                    filled: true,
+                    fillColor: Colors.black.withOpacity(0.3),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[800]!),
+                    ),
+                  ),
+                  dropdownColor: const Color(0xFF1C1C1C),
+                  style: const TextStyle(color: Colors.white),
+                  items: useTypes
+                      .map(
+                        (type) =>
+                            DropdownMenuItem(value: type, child: Text(type)),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null)
+                      setState(() => _selectedBuildType = value);
+                  },
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -497,7 +485,7 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
               top: -8,
               child: Container(
                 padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   color: Colors.white,
                   shape: BoxShape.circle,
                 ),
@@ -534,13 +522,12 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
       maxChildSize: 0.95,
       builder: (context, scrollController) {
         return Container(
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1C),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          decoration: const BoxDecoration(
+            color: Color(0xFF1A1A1C),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: Column(
             children: [
-              // Handle
               Container(
                 margin: const EdgeInsets.symmetric(vertical: 12),
                 width: 40,
@@ -550,15 +537,13 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-
-              // Header
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Resumen de la Build',
+                      'Resumen',
                       style: theme.textTheme.titleLarge?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -571,140 +556,31 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                   ],
                 ),
               ),
-
               const Divider(color: Color(0xFF2A2A2A), height: 1),
 
-              // Lista de componentes
               Expanded(
                 child: !hasSelection
                     ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.inventory_2_outlined,
-                              size: 64,
-                              color: Colors.grey[700],
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              "No hay componentes seleccionados",
-                              style: TextStyle(
-                                color: Colors.grey[500],
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
+                        child: Text(
+                          "No hay componentes",
+                          style: TextStyle(color: Colors.grey[500]),
                         ),
                       )
                     : ListView(
                         controller: scrollController,
                         padding: const EdgeInsets.all(16),
                         children: selectedComponents.entries.map((entry) {
-                          final typeKey = entry.key;
-                          final comp = entry.value;
-                          final displayName =
-                              displayNames[typeKey] ?? typeKey.toUpperCase();
-
                           return Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: const Color(0xFF2A2A2A),
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                // Imagen
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(
-                                    comp.imageUrl ?? '',
-                                    width: 50,
-                                    height: 50,
-                                    fit: BoxFit.contain,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Container(
-                                        width: 50,
-                                        height: 50,
-                                        color: Colors.grey[800],
-                                        child: Icon(
-                                          icons[typeKey] ?? Icons.help_outline,
-                                          color: Colors.grey[600],
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-
-                                // Info
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        displayName,
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 11,
-                                          color: Colors.grey[400],
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        comp.name,
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          color: Colors.white,
-                                        ),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        comp.price != null
-                                            ? currencyFormatter.format(
-                                                comp.price,
-                                              )
-                                            : "N/A",
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: theme.primaryColor,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-
-                                // Botón eliminar
-                                IconButton(
-                                  icon: Icon(
-                                    Icons.delete_outline,
-                                    color: Colors.red[400],
-                                  ),
-                                  onPressed: () {
-                                    setState(() {
-                                      selectedComponents.remove(typeKey);
-                                    });
-                                    if (selectedComponents.isEmpty) {
-                                      Navigator.pop(context);
-                                    }
-                                  },
-                                ),
-                              ],
+                            margin: const EdgeInsets.only(bottom: 8),
+                            child: Text(
+                              "• ${entry.value.name}",
+                              style: const TextStyle(color: Colors.white70),
                             ),
                           );
                         }).toList(),
                       ),
               ),
 
-              // Footer con acciones
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: const BoxDecoration(
@@ -715,58 +591,25 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                   top: false,
                   child: Column(
                     children: [
-                      // Total
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            'Precio Total:',
-                            style: TextStyle(
-                              color: Colors.grey[400],
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                            ),
+                          const Text(
+                            'Total:',
+                            style: TextStyle(color: Colors.grey, fontSize: 16),
                           ),
                           Text(
                             '${currencyFormatter.format(totalPrice)} MXN',
                             style: TextStyle(
                               color: theme.primaryColor,
-                              fontWeight: FontWeight.bold,
                               fontSize: 20,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 16),
 
-                      // Botón Chat
-                      SizedBox(
-                        width: double.infinity,
-                        height: 48,
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            showModalBottomSheet(
-                              context: context,
-                              isScrollControlled: true,
-                              backgroundColor: Colors.transparent,
-                              builder: (_) => BuildsChatSheet(api: _chatApi),
-                            );
-                          },
-                          icon: const Icon(Icons.chat_bubble_outline, size: 18),
-                          label: const Text('Chatea con Yarbis'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: theme.primaryColor,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Botón Guardar
                       SizedBox(
                         width: double.infinity,
                         height: 48,
@@ -787,13 +630,10 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                                   ),
                                 )
                               : const Icon(Icons.save, size: 18),
-                          label: Text(
-                            _isSaving ? 'Guardando...' : 'Guardar Build',
-                          ),
+                          label: const Text('Guardar Build'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.green[700],
                             foregroundColor: Colors.white,
-                            disabledBackgroundColor: Colors.grey[800],
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
@@ -802,7 +642,6 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                       ),
                       const SizedBox(height: 12),
 
-                      // Botón Publicar
                       SizedBox(
                         width: double.infinity,
                         height: 48,
@@ -822,7 +661,6 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                                   ? theme.primaryColor.withOpacity(0.5)
                                   : Colors.grey[800]!,
                             ),
-                            disabledForegroundColor: Colors.grey[700],
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
@@ -858,7 +696,6 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
           filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
           child: Column(
             children: [
-              // Header
               InkWell(
                 onTap: () {
                   setState(() {
@@ -917,8 +754,6 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                   ),
                 ),
               ),
-
-              // Contenido expandible
               AnimatedSize(
                 duration: const Duration(milliseconds: 300),
                 curve: Curves.easeInOut,
@@ -968,9 +803,7 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                                 ),
                               );
                             }
-
                             final components = snapshot.data!.components;
-
                             if (components.isEmpty) {
                               return Padding(
                                 padding: const EdgeInsets.symmetric(
@@ -984,7 +817,6 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                                 ),
                               );
                             }
-
                             return ListView.builder(
                               shrinkWrap: true,
                               physics: const NeverScrollableScrollPhysics(),
@@ -1073,7 +905,6 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Barra de búsqueda siempre visible
           _buildFilterTextField(
             controller: searchControllers[typeKey],
             hintText: 'Buscar componente...',
@@ -1081,8 +912,6 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
             icon: Icons.search,
           ),
           const SizedBox(height: 8),
-
-          // Botón para mostrar más filtros
           TextButton.icon(
             onPressed: () {
               setState(() {
@@ -1102,8 +931,6 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             ),
           ),
-
-          // Filtros adicionales (colapsables)
           AnimatedSize(
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeInOut,
@@ -1158,7 +985,6 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
       );
     }
 
-    // Diseño para tablet/desktop (horizontal)
     return Wrap(
       spacing: 12,
       runSpacing: 12,
@@ -1254,8 +1080,9 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: Colors.white,
                 ),
-                items: List.generate(items.length, (index) {
-                  return DropdownMenuItem(
+                items: List.generate(
+                  items.length,
+                  (index) => DropdownMenuItem(
                     value: items[index],
                     child: Text(
                       itemLabels[index],
@@ -1264,8 +1091,8 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
-                  );
-                }),
+                  ),
+                ),
                 onChanged: onChanged,
               ),
             ),
@@ -1355,7 +1182,6 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                 selectedComponents[typeKey] = comp;
               }
             });
-
             if (keyComponents.contains(typeKey)) {
               await _runCompatibilityCheck();
             }
@@ -1382,7 +1208,6 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Imagen
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: Image.network(
@@ -1390,19 +1215,15 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                 width: 60,
                 height: 60,
                 fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    width: 60,
-                    height: 60,
-                    color: Colors.grey[800],
-                    child: const Icon(Icons.broken_image, color: Colors.grey),
-                  );
-                },
+                errorBuilder: (context, error, stackTrace) => Container(
+                  width: 60,
+                  height: 60,
+                  color: Colors.grey[800],
+                  child: const Icon(Icons.broken_image, color: Colors.grey),
+                ),
               ),
             ),
             const SizedBox(width: 12),
-
-            // Info
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1436,8 +1257,6 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                 ],
               ),
             ),
-
-            // Icono de selección
             Icon(
               isSelected ? Icons.check_circle : Icons.add_circle_outline,
               color: isSelected ? theme.primaryColor : Colors.grey[600],
@@ -1445,8 +1264,6 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
             ),
           ],
         ),
-
-        // Links en la parte inferior
         const SizedBox(height: 12),
         Row(
           children: [
@@ -1522,14 +1339,12 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
             width: 60,
             height: 60,
             fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) {
-              return Container(
-                width: 60,
-                height: 60,
-                color: Colors.grey[800],
-                child: const Icon(Icons.broken_image, color: Colors.grey),
-              );
-            },
+            errorBuilder: (context, error, stackTrace) => Container(
+              width: 60,
+              height: 60,
+              color: Colors.grey[800],
+              child: const Icon(Icons.broken_image, color: Colors.grey),
+            ),
           ),
         ),
         const SizedBox(width: 16),
@@ -1620,7 +1435,7 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
 
   Widget _buildSidebar() {
     final theme = Theme.of(context);
-    final bool hasSelection = selectedComponents.isNotEmpty;
+    final hasSelection = selectedComponents.isNotEmpty;
     final double totalPrice = selectedComponents.values.fold(
       0.0,
       (sum, comp) => sum + (comp.price ?? 0.0),
@@ -1634,7 +1449,7 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+            padding: const EdgeInsets.all(24),
             child: Text(
               'Resumen de la Build',
               style: theme.textTheme.titleLarge?.copyWith(
@@ -1659,7 +1474,6 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                       final comp = entry.value;
                       final displayName =
                           displayNames[typeKey] ?? typeKey.toUpperCase();
-
                       return Container(
                         margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.all(12),
@@ -1741,16 +1555,16 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
+                    const Text(
                       'Precio Total:',
-                      style: TextStyle(color: Colors.grey[400], fontSize: 16),
+                      style: TextStyle(color: Colors.grey, fontSize: 16),
                     ),
                     Text(
                       '${currencyFormatter.format(totalPrice)} MXN',
                       style: TextStyle(
                         color: theme.primaryColor,
-                        fontWeight: FontWeight.bold,
                         fontSize: 20,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ],

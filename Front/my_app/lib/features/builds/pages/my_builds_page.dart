@@ -1,5 +1,3 @@
-// lib/features/builds/pages/my_builds_page.dart
-
 import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'package:provider/provider.dart';
@@ -15,9 +13,13 @@ class MyBuildsPage extends StatefulWidget {
 }
 
 class _MyBuildsPageState extends State<MyBuildsPage> {
-  late Future<List<BuildSummary>> _buildsFuture;
   late ApiClient _apiClient;
-  bool _isDeleting = false;
+
+  // Estado local: Usamos una lista explícita para manipularla al instante
+  List<BuildSummary>? _builds;
+  bool _isLoading = true;
+  bool _isDeleting = false; // Candado para evitar doble clic
+  String? _errorMessage;
 
   @override
   void initState() {
@@ -26,18 +28,36 @@ class _MyBuildsPageState extends State<MyBuildsPage> {
     _loadBuilds();
   }
 
-  void _loadBuilds() {
+  // Carga inicial de datos
+  Future<void> _loadBuilds() async {
+    if (!mounted) return;
     setState(() {
-      _buildsFuture = _apiClient.getMyBuilds();
+      _isLoading = true;
+      _errorMessage = null;
     });
+
+    try {
+      final builds = await _apiClient.getMyBuilds();
+      if (mounted) {
+        setState(() {
+          _builds = builds;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString();
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   Future<void> _deleteBuild(String buildId) async {
+    // 1. Si ya estamos borrando, ignorar nuevos clics
     if (_isDeleting) return;
 
-    setState(() {
-      _isDeleting = true; // Bloquea nuevos clics
-    });
     final bool confirm =
         await showDialog(
           context: context,
@@ -47,60 +67,87 @@ class _MyBuildsPageState extends State<MyBuildsPage> {
               'Confirmar Eliminación',
               style: TextStyle(color: Colors.white),
             ),
-            content: Text(
+            content: const Text(
               '¿Estás seguro de que deseas eliminar esta build? Esta acción no se puede deshacer.',
-              style: TextStyle(color: Colors.grey[300]),
+              style: TextStyle(color: Colors.grey),
             ),
             actions: [
               TextButton(
-                child: Text(
+                child: const Text(
                   'Cancelar',
-                  style: TextStyle(color: Colors.grey[400]),
+                  style: TextStyle(color: Colors.grey),
                 ),
-                onPressed: () => Navigator.of(context).pop(false),
+                onPressed: () => Navigator.pop(context, false),
               ),
               TextButton(
-                child: Text(
+                child: const Text(
                   'Eliminar',
-                  style: TextStyle(color: Theme.of(context).primaryColor),
+                  style: TextStyle(color: Colors.redAccent),
                 ),
-                onPressed: () => Navigator.of(context).pop(true),
+                onPressed: () => Navigator.pop(context, true),
               ),
             ],
           ),
         ) ??
         false;
 
-    if (confirm) {
-      try {
-        await _apiClient.deleteBuild(buildId);
-        _loadBuilds();
+    if (!confirm) return;
+
+    setState(() => _isDeleting = true);
+
+    // 2. BORRADO OPTIMISTA:
+    // Guardamos copia por si falla
+    final previousBuilds = List<BuildSummary>.from(_builds!);
+
+    // Borramos visualmente AHORA MISMO (sin esperar internet)
+    setState(() {
+      _builds?.removeWhere((b) => b.id == buildId);
+    });
+
+    try {
+      // 3. Petición al servidor en segundo plano
+      await _apiClient.deleteBuild(buildId);
+
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Build eliminada exitosamente'),
-            backgroundColor: Color.fromARGB(255, 192, 26, 62),
+            content: Text('Build eliminada correctamente'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
           ),
         );
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al eliminar la build: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      } finally {
-        // --- AÑADE EL BLOQUE FINALLY ---
-        // Sin importar si tuvo éxito o falló, desbloquea los botones.
-        setState(() {
-          _isDeleting = false;
-        });
       }
-    } else {
-      // --- AÑADE EL ELSE ---
-      // Si el usuario presiona "Cancelar", también debemos desbloquear.
-      setState(() {
-        _isDeleting = false;
-      });
+    } catch (e) {
+      // 4. MANEJO INTELIGENTE DE ERRORES
+      // Si el error dice "not found" (404), significa que ya se borró (quizás por doble clic).
+      // ¡Eso cuenta como éxito! No revertimos la lista.
+      final errString = e.toString().toLowerCase();
+      if (errString.contains('not found') || errString.contains('404')) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Build eliminada (Sincronizado)'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        // Si es otro error (ej. internet), revertimos la lista visualmente
+        if (mounted) {
+          setState(() {
+            _builds = previousBuilds;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error al eliminar: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } finally {
+      // 5. Liberar el candado siempre
+      if (mounted) setState(() => _isDeleting = false);
     }
   }
 
@@ -119,7 +166,7 @@ class _MyBuildsPageState extends State<MyBuildsPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header con título y botón
+              // Header
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -158,63 +205,50 @@ class _MyBuildsPageState extends State<MyBuildsPage> {
               ),
               const SizedBox(height: 32),
 
-              // FutureBuilder
-              FutureBuilder<List<BuildSummary>>(
-                future: _buildsFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(32.0),
-                        child: CircularProgressIndicator(),
+              // Lógica de carga manual (sin FutureBuilder)
+              if (_isLoading)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(32),
+                    child: CircularProgressIndicator(),
+                  ),
+                )
+              else if (_errorMessage != null)
+                Center(
+                  child: Text(
+                    'Error al cargar: $_errorMessage',
+                    style: const TextStyle(color: Colors.redAccent),
+                  ),
+                )
+              else if (_builds == null || _builds!.isEmpty)
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32.0),
+                    child: Text(
+                      'Aún no has guardado ninguna build. ¡Crea una!',
+                      style: TextStyle(color: Colors.grey[400]),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+              else
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _builds!.length,
+                  itemBuilder: (context, index) {
+                    final build = _builds![index];
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      // Key única para rendimiento
+                      key: ValueKey(build.id),
+                      child: BuildCard(
+                        buildSummary: build,
+                        onDelete: () => _deleteBuild(build.id),
                       ),
                     );
-                  }
-                  if (snapshot.hasError) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(32.0),
-                        child: Text(
-                          'Error al cargar tus builds: ${snapshot.error}',
-                          style: TextStyle(color: Colors.grey[400]),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    );
-                  }
-                  if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(32.0),
-                        child: Text(
-                          'Aún no has guardado ninguna build. ¡Crea una!',
-                          style: TextStyle(color: Colors.grey[400]),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    );
-                  }
-
-                  final builds = snapshot.data!;
-                  return ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: builds.length,
-                    itemBuilder: (context, index) {
-                      final build = builds[index];
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 24),
-                        child: BuildCard(
-                          // --- CORRECCIÓN 1 ---
-                          // Pasamos la variable al nuevo nombre 'buildSummary'
-                          buildSummary: build,
-                          onDelete: () => _deleteBuild(build.id),
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
+                  },
+                ),
             ],
           ),
         ),
@@ -223,26 +257,21 @@ class _MyBuildsPageState extends State<MyBuildsPage> {
   }
 }
 
-// TARJETA DE BUILD (Actualizada para usar BuildSummary)
+// --- WIDGET DE TARJETA (Sin cambios lógicos, solo estructura) ---
 class BuildCard extends StatelessWidget {
-  // --- CORRECCIÓN 2 ---
-  // Renombramos el campo de 'build' a 'buildSummary'
   final BuildSummary buildSummary;
   final VoidCallback onDelete;
 
-  // Actualizamos el constructor
   const BuildCard({
     super.key,
     required this.buildSummary,
     required this.onDelete,
   });
 
-  // El método build() se mantiene igual
   @override
   Widget build(BuildContext context) {
     final bool isMobile = MediaQuery.of(context).size.width < 768;
     final DateFormat formatter = DateFormat('dd/MM/yyyy');
-    // Usamos el nuevo nombre de variable
     final String createdDate = formatter.format(
       buildSummary.createdAt.toLocal(),
     );
@@ -280,14 +309,11 @@ class BuildCard extends StatelessWidget {
     );
   }
 
-  // --- CORRECCIÓN 3 ---
-  // Usamos 'buildSummary' en lugar de 'build'
   Widget _buildContent(BuildContext context, String createdDate) {
     final currencyFormatter = NumberFormat.currency(
       locale: 'es_MX',
       symbol: '\$',
     );
-    // Usamos el nuevo nombre de variable
     final String totalPrice = currencyFormatter.format(buildSummary.totalPrice);
 
     return Column(
@@ -299,7 +325,7 @@ class BuildCard extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                buildSummary.name, // <-- Dato real
+                buildSummary.name,
                 style: const TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
@@ -309,7 +335,7 @@ class BuildCard extends StatelessWidget {
             ),
             const SizedBox(width: 16),
             Text(
-              totalPrice, // <-- Dato real (formateado)
+              totalPrice,
               style: TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
@@ -320,7 +346,7 @@ class BuildCard extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          'Creada el: $createdDate', // <-- Dato real (formateado)
+          'Creada el: $createdDate',
           style: const TextStyle(color: Color(0xFFA0A0A0), fontSize: 14),
         ),
         const SizedBox(height: 16),
@@ -328,7 +354,6 @@ class BuildCard extends StatelessWidget {
           spacing: 16,
           runSpacing: 12,
           children: [
-            // Usamos el nuevo nombre de variable
             _buildSpec(Icons.memory, 'CPU:', buildSummary.cpuName ?? 'N/A'),
             _buildSpec(
               Icons.developer_board,
@@ -374,33 +399,16 @@ class BuildCard extends StatelessWidget {
       children: [
         IconButton(
           onPressed: () {
-            // TODO: Navegar a la página de detalle de la build
-            // (requerirá pasar buildSummary.id)
+            /* Navegar a detalle */
           },
           icon: const Icon(Icons.visibility, color: Color(0xFFE0E0E0)),
           tooltip: 'Ver detalles',
-          padding: const EdgeInsets.all(8),
-          constraints: const BoxConstraints(),
         ),
         const SizedBox(width: 8),
         IconButton(
-          onPressed: () {
-            // TODO: Navegar a la página de edición
-            // (requerirá pasar la build completa o su id)
-          },
-          icon: const Icon(Icons.edit, color: Color(0xFFE0E0E0)),
-          tooltip: 'Editar build',
-          padding: const EdgeInsets.all(8),
-          constraints: const BoxConstraints(),
-        ),
-        const SizedBox(width: 8),
-        IconButton(
-          onPressed: onDelete, // ¡Acción conectada!
+          onPressed: onDelete,
           icon: const Icon(Icons.delete, color: Colors.redAccent),
           tooltip: 'Eliminar build',
-          padding: const EdgeInsets.all(8),
-          constraints: const BoxConstraints(),
-          style: IconButton.styleFrom(backgroundColor: Colors.transparent),
         ),
       ],
     );
