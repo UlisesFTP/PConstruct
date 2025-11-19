@@ -250,7 +250,6 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
   Future<void> _runCompatibilityCheck() async {
     if (_isCheckingCompatibility) return;
 
-    // La validación sigue requiriendo CPU y Motherboard como base mínima
     final cpu = selectedComponents['cpu']?.name;
     final motherboard = selectedComponents['motherboard']?.name;
 
@@ -264,42 +263,133 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
         'motherboard': motherboard,
         'ram': selectedComponents['ram']?.name,
         'gpu': selectedComponents['gpu']?.name,
-        // --- NUEVOS COMPONENTES AGREGADOS ---
-        'psu': selectedComponents['psu']?.name, // Fuente de poder
-        'gabinete': selectedComponents['gabinete']?.name, // Case / Chasis
-        'cooler': selectedComponents['cooler']
-            ?.name, // (Opcional) También es útil para altura vs gabinete
-        // ------------------------------------
+        'psu': selectedComponents['psu']?.name,
+        'gabinete': selectedComponents['gabinete']?.name,
+        'cooler': selectedComponents['cooler']?.name,
       };
 
       final response = await _apiClient.checkCompatibility(componentsToVerify);
 
       if (!mounted) return;
 
-      if (!response.compatible) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Advertencia: ${response.reason}'),
-            backgroundColor: Colors.red.shade600,
-            duration: const Duration(seconds: 6),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(response.reason),
-            backgroundColor: Colors.green.shade600,
-            duration: const Duration(seconds: 3),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      // --- AQUÍ ESTÁ EL CAMBIO: USAMOS EL NUEVO MÉTODO ---
+      _showCompatibilityResult(response.compatible, response.reason);
+      // ---------------------------------------------------
     } catch (e) {
-      // Error silencioso
+      // Error silencioso en la validación automática para no molestar,
+      // o podrías usar _showCompatibilityResult(false, "Error de conexión...")
     } finally {
       if (mounted) setState(() => _isCheckingCompatibility = false);
     }
+  }
+
+  void _showCompatibilityResult(bool compatible, String reason) {
+    // Limpiar notificaciones anteriores para que no se acumulen
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+    final Color bgColor = compatible
+        ? Colors.green.shade800
+        : const Color(0xFFC7384D); // Rojo de tu marca
+
+    final IconData icon = compatible
+        ? Icons.check_circle_outline
+        : Icons.warning_amber_rounded;
+
+    final String title = compatible
+        ? "¡Componentes Compatibles!"
+        : "Atención: Incompatibilidad";
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        // Hacemos que flote y tenga margen para parecer "Push Up"
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        elevation: 6,
+        backgroundColor:
+            Colors.transparent, // Hacemos transparente el fondo base
+        padding: EdgeInsets
+            .zero, // Quitamos padding default para usar nuestro container
+        // Si es error, duramos "infinito" (hasta click), si es éxito, 4 segundos
+        duration: compatible
+            ? const Duration(seconds: 4)
+            : const Duration(days: 1),
+
+        content: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.3),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+            border: Border.all(color: Colors.white.withOpacity(0.1), width: 1),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // CABECERA CON ICONO Y TÍTULO
+              Row(
+                children: [
+                  Icon(icon, color: Colors.white, size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Divider(color: Colors.white24, height: 1),
+              const SizedBox(height: 8),
+
+              // CUERPO DEL MENSAJE (La explicación de Gemini)
+              Text(
+                reason,
+                style: const TextStyle(
+                  fontSize: 14,
+                  height: 1.4,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // BOTÓN DE ACCIÓN DE ANCHO COMPLETO
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: bgColor, // Texto del color del fondo
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: const Text(
+                    "ENTENDIDO",
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _showSummaryBottomSheet() {
