@@ -36,8 +36,8 @@ class ApiClient {
 
   ApiClient({this.authProvider}) {
     _dio.options.baseUrl = _baseUrl;
-    _dio.options.connectTimeout = const Duration(seconds: 10);
-    _dio.options.receiveTimeout = const Duration(seconds: 10);
+    _dio.options.connectTimeout = const Duration(seconds: 45);
+    _dio.options.receiveTimeout = const Duration(seconds: 45);
 
     _dio.interceptors.add(
       InterceptorsWrapper(

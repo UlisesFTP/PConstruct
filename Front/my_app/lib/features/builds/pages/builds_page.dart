@@ -505,18 +505,25 @@ class _BuildsPageState extends State<BuildsPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Filtros',
+              'Filtros Inteligentes (IA)',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
               ),
             ),
+            const SizedBox(height: 8),
+            Text(
+              "Puedes escribir términos como 'i5 12th' o 'La 4060' y la IA entenderá.",
+              style: TextStyle(color: Colors.grey[500], fontSize: 12),
+            ),
             const SizedBox(height: 24),
+
+            // 1. TIPO DE USO
             _buildFilterField(
               label: 'Tipo de uso',
               child: DropdownButtonFormField<String>(
-                value: _selectedUseType,
+                value: _selectedUseType, // USAR VARIABLE DE ESTADO
                 decoration: _inputDecoration(),
                 dropdownColor: const Color(0xFF1C1C1C),
                 items: ['Todos', 'Gaming', 'Oficina', 'Edición', 'Programación']
@@ -533,47 +540,57 @@ class _BuildsPageState extends State<BuildsPage> {
               ),
             ),
             const SizedBox(height: 16),
+
+            // 2. CPU
             _buildFilterField(
-              label: 'CPU (contiene)',
+              label: 'CPU (Modelo)',
               child: TextField(
-                controller: _cpuController,
-                decoration: _inputDecoration(hintText: 'Ej: Ryzen 7, i9'),
-                onChanged: (v) => setState(() {}),
+                controller: _cpuController, // USAR CONTROLADOR DE ESTADO
+                decoration: _inputDecoration(hintText: 'Ej: Ryzen 7, i9-12900'),
+                onChanged: (v) =>
+                    {}, // No recargamos al escribir para no saturar
               ),
             ),
             const SizedBox(height: 16),
+
+            // 3. GPU
             _buildFilterField(
-              label: 'GPU (contiene)',
+              label: 'GPU (Modelo)',
               child: TextField(
-                controller: _gpuController,
+                controller: _gpuController, // USAR CONTROLADOR DE ESTADO
                 decoration: _inputDecoration(hintText: 'Ej: RTX 4070, RX 6800'),
-                onChanged: (v) => setState(() {}),
+                onChanged: (v) => {},
               ),
             ),
             const SizedBox(height: 16),
+
+            // 4. PRESUPUESTO
             _buildFilterField(
               label: 'Presupuesto máximo',
               child: TextField(
-                controller: _budgetController,
+                controller: _budgetController, // USAR CONTROLADOR DE ESTADO
                 keyboardType: TextInputType.number,
                 decoration: _inputDecoration(hintText: '\$ MXN'),
-                onChanged: (v) => setState(() {}),
+                onChanged: (v) => {},
               ),
             ),
             const SizedBox(height: 24),
+
+            // 5. BOTÓN APLICAR
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _loadBuilds,
+              child: ElevatedButton.icon(
+                onPressed: _loadBuilds, // LLAMAR A LA FUNCIÓN DE CARGA REAL
+                icon: const Icon(Icons.search, size: 18),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFC7384D),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                child: const Text(
+                label: const Text(
                   "Aplicar Filtros",
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),

@@ -8,6 +8,7 @@ import os
 from .config import GEMINI_API_KEY # Importamos la clave que configuramos
 import re
 import os, re, asyncio
+import asyncio
 
 # --- Configuración del Cliente Gemini ---
 if not GEMINI_API_KEY:
@@ -228,3 +229,70 @@ async def chat_reply(history: list[dict], message: str, timeout_s: int = 25) -> 
         # Ya casi no debería entrar aquí, pero por si acaso:
         return (f"[debug] {type(e).__name__}: {e}" if os.getenv("CHAT_DEBUG", "0") == "1"
                 else "Hubo un error al responder.")
+
+
+
+
+
+SEARCH_PROMPT_TEMPLATE = """
+Eres un traductor de búsquedas SQL para hardware de PC.
+Tu objetivo es convertir términos de búsqueda coloquiales en palabras clave técnicas para buscar en una base de datos usando "LIKE %term%".
+
+Entrada Usuario:
+CPU: "{cpu_input}"
+GPU: "{gpu_input}"
+
+Instrucciones:
+1. Extrae los modelos clave (ej: "4070", "5600", "12700").
+2. Normaliza variaciones (ej: si dice "4070ti", genera ["4070 ti", "4070ti"]).
+3. Si dice generaciones (ej: "i5 12th"), genera substrings comunes (["i5-12", "12400", "12600"]).
+4. Elimina palabras basura ("procesador", "tarjeta", "buena", "barata").
+5. Devuelve JSON con listas de strings (substrings cortos y efectivos).
+
+Respuesta JSON esperada:
+{{
+  "cpu_terms": ["term1", "term2"],
+  "gpu_terms": ["term1", "term2"]
+}}
+"""
+
+
+async def normalize_search_terms(cpu: str | None, gpu: str | None) -> dict:
+    """
+    Usa Gemini con un TIMEOUT CORTO (5s). Si falla, usa búsqueda simple.
+    """
+    # Fallback por defecto (búsqueda exacta)
+    fallback_result = {
+        "cpu_terms": [cpu] if cpu else [],
+        "gpu_terms": [gpu] if gpu else []
+    }
+
+    if not GEMINI_API_KEY:
+        return fallback_result
+
+    if not cpu and not gpu:
+        return {"cpu_terms": [], "gpu_terms": []}
+
+    try:
+        model = genai.GenerativeModel('gemini-2.5-flash') # Usar modelo rápido
+        prompt = SEARCH_PROMPT_TEMPLATE.format(
+            cpu_input=cpu or "",
+            gpu_input=gpu or ""
+        )
+        
+        # --- EL FIX MAESTRO: TIMEOUT INTERNO ---
+        # Le damos máximo 5 segundos a Gemini. Si no, abortamos la IA.
+        response = await asyncio.wait_for(
+            model.generate_content_async(prompt), 
+            timeout=5.0 
+        )
+        
+        clean_text = response.text.strip().replace("```json", "").replace("```", "").strip()
+        return json.loads(clean_text)
+
+    except asyncio.TimeoutError:
+        print("⚠️ Gemini tardó demasiado (Timeout 5s). Usando búsqueda simple.")
+        return fallback_result
+    except Exception as e:
+        print(f"⚠️ Error Gemini Search: {e}")
+        return fallback_result

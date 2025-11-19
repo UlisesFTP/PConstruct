@@ -102,14 +102,20 @@ async def get_community_builds(
     async with httpx.AsyncClient() as client:
         try:
             target_url = f"{BUILD_SERVICE_URL}/api/v1/builds/community"
-            # Pasamos los query params (filtros)
+            
+            # --- CORRECCIÓN AQUÍ: Añadir timeout explicito ---
             response = await client.get(
                 target_url,
                 headers=headers,
-                params=request.query_params
+                params=request.query_params,
+                timeout=30.0  # <--- Aumentamos a 30 segundos (antes era default ~5s)
             )
             response.raise_for_status()
             return response.json()
+        except httpx.TimeoutException:
+            # Loguear error específico de tiempo
+            logger.error("Timeout al obtener community builds (Gemini tardó demasiado)")
+            raise HTTPException(status_code=504, detail="La búsqueda inteligente tardó demasiado.")
         except httpx.HTTPStatusError as e:
             raise HTTPException(status_code=e.response.status_code, detail=e.response.json())
         except Exception as e:
