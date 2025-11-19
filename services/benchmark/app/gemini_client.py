@@ -39,13 +39,9 @@ async def get_gemini_benchmark_analysis(
     cpu_model: Optional[str], 
     gpu_model: Optional[str], 
     scenario: Optional[str]
-) -> Dict[str, Any]: # La firma ahora es asíncrona
-    """
-    Realiza una única llamada a Gemini para obtener tanto la estimación
-    de rendimiento (FPS) como una recomendación de texto.
-    """
+) -> Dict[str, Any]:
     if not enabled():
-        logger.warning("Flujo de benchmark de Gemini deshabilitado. Faltan variables de entorno.")
+        logger.warning("Flujo de benchmark de Gemini deshabilitado.")
         return {
             "performance_fps": {},
             "recommendation_text": "El análisis de IA está desactivado."
@@ -54,61 +50,70 @@ async def get_gemini_benchmark_analysis(
     if not scenario:
         return {
             "performance_fps": {},
-            "recommendation_text": "Por favor, especifica un juego o programa para analizar."
+            "recommendation_text": "Por favor, especifica un juego o programa."
         }
 
-    hardware_summary = []
-    if cpu_model:
-        hardware_summary.append(f"CPU: {cpu_model}")
-    if gpu_model:
-        hardware_summary.append(f"GPU: {gpu_model}")
+    # --- CAMBIO IMPORTANTE AQUÍ ---
+    # Combinamos los inputs para que Gemini entienda el contexto global.
+    # Esto arregla el caso donde el usuario escribe "RTX 3060" pero Flutter lo envió como CPU.
+    raw_components = []
+    if cpu_model: raw_components.append(cpu_model)
+    if gpu_model: raw_components.append(gpu_model)
     
-    if not hardware_summary:
+    hardware_string = ", ".join(raw_components)
+
+    if not hardware_string:
          return {
             "performance_fps": {},
-            "recommendation_text": "No se proporcionó hardware (ni CPU ni GPU)."
+            "recommendation_text": "No se proporcionó hardware para analizar."
         }
 
     prompt = f"""
-    Eres un experto analista de hardware de PC.
+    Eres un experto analista de hardware de PC y rendimiento en videojuegos/software.
     
-    Hardware del usuario: {", ".join(hardware_summary)}
+    ENTRADA DEL USUARIO:
+    Hardware: {hardware_string}
     Escenario (Juego/Programa): {scenario}
 
-    Por favor, proporciona un análisis en formato JSON. El JSON debe tener dos claves:
-    1.  `performance_fps`: Un objeto JSON que estima los FPS (fotogramas por segundo) promedio en este escenario para las resoluciones 1080p, 1440p y 4K. Si una resolución no aplica (ej. un juego 2D) o no se puede estimar, usa `null`.
-    2.  `recommendation_text`: Un string de texto (no JSON) con una recomendación personalizada en 3-5 viñetas, explicando el rendimiento esperado y posibles mejoras.
-
-    Ejemplo de respuesta:
+    INSTRUCCIONES:
+    1. Analiza el texto en 'Hardware'. El usuario puede haber escrito nombres parciales (ej: "4070" en vez de "RTX 4070") o haber puesto una GPU donde debería ir la CPU. Identifica los componentes reales (Intel, AMD, NVIDIA) implícitos en el texto.
+    2. Estima el rendimiento (FPS promedio) para el escenario dado.
+    
+    RESPUESTA (JSON estricto):
     {{
       "performance_fps": {{
-        "1080p": 145,
-        "1440p": 90,
-        "4K": 55
+        "1080p": <int o null>,
+        "1440p": <int o null>,
+        "4K": <int o null>
       }},
-      "recommendation_text": "Basado en tu hardware para {scenario}:\n- Tu rendimiento en 1080p será excelente.\n- En 1440p, puedes esperar una experiencia muy fluida.\n- El 4K es jugable, pero podrías necesitar ajustar configuraciones.\n- Sugerencia: Esta es una configuración muy equilibrada."
+      "recommendation_text": "Breve análisis del rendimiento de {hardware_string} en {scenario}. Si detectaste que el input era ambiguo, aclara qué componente asumiste."
     }}
     """
     
     try:
         model = _get_model()
-        
-        # 2. Cambiar '.generate_content' por 'await .generate_content_async'
         resp = await model.generate_content_async(prompt) 
         
-        response_data = json.loads(resp.text)
+        # Limpieza básica por si Gemini devuelve bloques de código markdown ```json ... ```
+        clean_text = resp.text.replace("```json", "").replace("```", "").strip()
+        
+        response_data = json.loads(clean_text)
         
         if "performance_fps" in response_data and "recommendation_text" in response_data:
             return {
                 "performance_fps": response_data.get("performance_fps") or {},
-                "recommendation_text": response_data.get("recommendation_text") or "No se pudo generar recomendación."
+                "recommendation_text": response_data.get("recommendation_text") or "Sin recomendación."
             }
         else:
-            raise ValueError("La respuesta de Gemini no tiene la estructura JSON esperada.")
+            # Fallback simple si el JSON no es perfecto
+            return {
+                 "performance_fps": {},
+                 "recommendation_text": "Gemini no pudo estructurar la respuesta."
+            }
 
     except Exception as e:
         logger.error(f"Fallo en get_gemini_benchmark_analysis: {e}")
         return {
             "performance_fps": {},
-            "recommendation_text": f"Error al analizar el rendimiento: {e}"
+            "recommendation_text": f"Error de estimación IA: {e}"
         }

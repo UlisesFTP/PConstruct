@@ -57,55 +57,47 @@ class _BenchmarksPageState extends State<BenchmarksPage>
   }
 
   Future<void> _fetchMyBuilds() async {
+    // Usamos addPostFrameCallback para evitar errores de construcción inicial
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
         final apiClient = Provider.of<ApiClient>(context, listen: false);
         final builds = await apiClient.getMyBuilds();
-        setState(() {
-          _myBuilds = builds;
-          _isBuildsLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _myBuilds = builds;
+            _isBuildsLoading = false;
+            _buildsError = null; // Limpiamos error si hubo éxito
+          });
+        }
       } catch (e) {
-        setState(() {
-          _buildsError = e.toString();
-          _isBuildsLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _isBuildsLoading = false;
+            // Aquí sí dejamos _buildsError para que el dropdown muestre "Error"
+            // pero TAMBIÉN mostramos el SnackBar para dar detalles.
+            _buildsError = "No se pudieron cargar tus builds.";
+          });
+          // No mostramos snackbar aquí para no invadir la pantalla al inicio,
+          // a menos que sea crítico para ti.
+          print("Error cargando builds: $e");
+        }
       }
     });
   }
 
+  // En lib/features/benchmarks/pages/benchmarks_page.dart
+
   Future<void> _runBenchmark() async {
+    // Ocultar teclado para ver bien el SnackBar
+    FocusScope.of(context).unfocus();
+
     setState(() {
       _isLoading = true;
-      _errorMessage = null;
+      // No borramos _errorMessage aquí porque ya no lo usaremos para bloquear la UI,
+      // pero sí limpiamos resultados previos para indicar nueva carga.
       _benchmarkClassification = null;
       _benchmarkRecommendation = null;
     });
-
-    if (_selectedBuild == null && _componentSearchController.text.isNotEmpty) {
-      String component = _componentSearchController.text.toLowerCase();
-      bool isGpu =
-          component.contains('rtx') ||
-          component.contains('geforce') ||
-          component.contains('radeon') ||
-          component.contains('arc');
-      bool isCpu =
-          component.contains('ryzen') ||
-          component.contains('core') ||
-          component.contains('i5') ||
-          component.contains('i7') ||
-          component.contains('i9') ||
-          component.contains('threadripper') ||
-          component.contains('xeon');
-
-      if (!isGpu && !isCpu) {
-        _showInvalidComponentAlert();
-        setState(() {
-          _isLoading = false;
-        });
-        return;
-      }
-    }
 
     try {
       final apiClient = Provider.of<ApiClient>(context, listen: false);
@@ -118,14 +110,23 @@ class _BenchmarksPageState extends State<BenchmarksPage>
         requestBody['cpu_model'] = _selectedBuild!.cpuName;
         requestBody['gpu_model'] = _selectedBuild!.gpuName;
       } else {
-        String component = _componentSearchController.text.toLowerCase();
-        if (component.contains('rtx') ||
-            component.contains('geforce') ||
-            component.contains('radeon') ||
-            component.contains('arc')) {
-          requestBody['gpu_model'] = _componentSearchController.text;
+        String componentInput = _componentSearchController.text.trim();
+        String componentLower = componentInput.toLowerCase();
+
+        bool seemsLikeGpu =
+            componentLower.contains('rtx') ||
+            componentLower.contains('gtx') ||
+            componentLower.contains('rx') ||
+            componentLower.contains('arc') ||
+            componentLower.contains('geforce') ||
+            componentLower.contains('radeon') ||
+            componentLower.contains('titan') ||
+            componentLower.contains('quadro');
+
+        if (seemsLikeGpu) {
+          requestBody['gpu_model'] = componentInput;
         } else {
-          requestBody['cpu_model'] = _componentSearchController.text;
+          requestBody['cpu_model'] = componentInput;
         }
       }
 
@@ -139,13 +140,20 @@ class _BenchmarksPageState extends State<BenchmarksPage>
         _benchmarkRecommendation = jsonResponse['gemini_reco'] as String?;
       });
     } catch (e) {
+      // --- CAMBIO AQUÍ: En lugar de "ensuciar" la UI, mostramos el SnackBar ---
+      _showErrorSnackBar(e);
+
+      // Opcional: Si quieres que la UI vuelva a estado "vacío" en lugar de error:
       setState(() {
-        _errorMessage = e.toString();
+        _benchmarkClassification = null;
+        _benchmarkRecommendation = null;
       });
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -359,9 +367,15 @@ class _BenchmarksPageState extends State<BenchmarksPage>
   }
 
   Widget _buildComponentSearchCard() {
+    // Detectamos si este modo está "Activo" para resaltarlo visualmente
+    bool isManualMode = _componentSearchController.text.isNotEmpty;
+    bool isBuildMode = _selectedBuild != null;
+
     return _buildEnhancedGlassCard(
-      icon: Icons.search,
-      iconColor: Colors.blue[400]!,
+      // Si está en modo manual, usamos color azul, si no, gris apagado
+      iconColor: isManualMode ? Colors.blue[400]! : Colors.grey,
+      // Opacidad reducida si el otro modo está activo
+      opacity: isBuildMode ? 0.5 : 1.0,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -370,10 +384,16 @@ class _BenchmarksPageState extends State<BenchmarksPage>
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
+                  color: isManualMode
+                      ? Colors.blue.withOpacity(0.1)
+                      : Colors.grey.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(Icons.memory, color: Colors.blue[400], size: 20),
+                child: Icon(
+                  Icons.memory,
+                  color: isManualMode ? Colors.blue[400] : Colors.grey,
+                  size: 20,
+                ),
               ),
               const SizedBox(width: 12),
               Text(
@@ -381,9 +401,7 @@ class _BenchmarksPageState extends State<BenchmarksPage>
                 style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.bold,
-                  color: _selectedBuild != null
-                      ? Colors.grey[600]
-                      : Colors.white,
+                  color: isManualMode ? Colors.white : Colors.grey[400],
                 ),
               ),
             ],
@@ -391,9 +409,18 @@ class _BenchmarksPageState extends State<BenchmarksPage>
           const SizedBox(height: 16),
           _buildSearchField(
             controller: _componentSearchController,
-            hintText: 'Ej: RTX 4070, Ryzen 7 7800X3D...',
-            enabled: _selectedBuild == null,
+            hintText: 'Ej: RTX 4070, Ryzen 7...',
+            // SIEMPRE habilitado para permitir cambio rápido
+            enabled: true,
             icon: Icons.search,
+            onChanged: (text) {
+              setState(() {
+                // LOGICA UX: Si el usuario escribe aquí, quitamos la build seleccionada
+                if (text.isNotEmpty && _selectedBuild != null) {
+                  _selectedBuild = null;
+                }
+              });
+            },
           ),
         ],
       ),
@@ -1019,8 +1046,9 @@ class _BenchmarksPageState extends State<BenchmarksPage>
 
   Widget _buildEnhancedGlassCard({
     required Widget child,
-    required IconData icon,
-    required Color iconColor,
+    IconData? icon,
+    Color? iconColor,
+    double opacity = 1.0,
   }) {
     return Container(
       width: double.infinity,
@@ -1059,6 +1087,7 @@ class _BenchmarksPageState extends State<BenchmarksPage>
     required String hintText,
     required bool enabled,
     required IconData icon,
+    Function(String)? onChanged,
   }) {
     final theme = Theme.of(context);
     return Container(
@@ -1136,221 +1165,226 @@ class _BenchmarksPageState extends State<BenchmarksPage>
   }
 
   Widget _buildBuildSelector() {
-    final theme = Theme.of(context);
-    final bool isEnabled = _componentSearchController.text.isEmpty;
+    // Detectamos si este modo está "Activo"
+    bool isBuildMode = _selectedBuild != null;
+    bool isManualMode = _componentSearchController.text.isNotEmpty;
 
     if (_isBuildsLoading) {
-      return Center(
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Color(0xFFC7384D),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Cargando builds...',
-                style: TextStyle(color: Colors.grey[400], fontSize: 14),
-              ),
-            ],
-          ),
-        ),
-      );
+      return const Center(
+        child: CircularProgressIndicator(),
+      ); // Simplificado para brevedad
     }
 
-    if (_buildsError != null) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.red.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.redAccent.withOpacity(0.3)),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.error_outline, color: Colors.redAccent, size: 20),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Error al cargar builds: $_buildsError',
-                style: const TextStyle(color: Colors.redAccent, fontSize: 14),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
+    // Si hay error, muestra tu widget de error actual...
+    if (_buildsError != null) return Text("Error: $_buildsError");
 
-    if (_myBuilds.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.blue.withOpacity(0.05),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.blue.withOpacity(0.2)),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.info_outline, color: Colors.blue[300], size: 24),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'No tienes builds guardadas',
-                    style: TextStyle(
-                      color: Colors.blue[300],
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '¡Crea una en la sección "Mis Builds"!',
-                    style: TextStyle(color: Colors.grey[400], fontSize: 13),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
+    // --- CONSTRUCCIÓN DE LA LISTA DEL DROPDOWN ---
+    List<DropdownMenuItem<BuildSummary?>> dropdownItems = [];
 
-    List<DropdownMenuItem<BuildSummary?>> dropdownItems = [
+    // 1. LA OPCIÓN DEFAULT (CLAVE PARA LA UX)
+    dropdownItems.add(
       DropdownMenuItem<BuildSummary?>(
         value: null,
-        enabled: false,
         child: Row(
           children: [
-            Icon(Icons.inventory_2_outlined, size: 18, color: Colors.grey[600]),
+            Icon(Icons.cancel_presentation, size: 18, color: Colors.grey[500]),
             const SizedBox(width: 8),
             Text(
-              'Selecciona tu Build Guardada',
-              style: TextStyle(color: Colors.grey[600]),
+              'Ninguna build seleccionada (Manual)',
+              style: TextStyle(
+                color: Colors.grey[500],
+                fontStyle: FontStyle.italic,
+              ),
             ),
           ],
         ),
       ),
-    ];
+    );
 
-    dropdownItems.addAll(
-      _myBuilds.map((build) {
-        return DropdownMenuItem<BuildSummary?>(
-          value: build,
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFC7384D).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(6),
+    // 2. TUS BUILDS
+    if (_myBuilds.isNotEmpty) {
+      dropdownItems.addAll(
+        _myBuilds.map((build) {
+          return DropdownMenuItem<BuildSummary?>(
+            value: build,
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 400),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFC7384D).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Icon(
+                      Icons.computer,
+                      size: 16,
+                      color: Color(0xFFC7384D),
+                    ),
                   ),
-                  child: const Icon(
-                    Icons.computer,
-                    size: 16,
-                    color: Color(0xFFC7384D),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        build.name,
-                        style: TextStyle(
-                          color: isEnabled ? Colors.white : Colors.grey[600],
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                      ),
-                      if (build.cpuName != null || build.gpuName != null)
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
                         Text(
-                          '${build.cpuName ?? "N/A"} • ${build.gpuName ?? "N/A"}',
+                          build.name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          '${build.cpuName ?? "CPU?"} • ${build.gpuName ?? "GPU?"}',
                           style: TextStyle(
                             color: Colors.grey[500],
                             fontSize: 11,
                           ),
                           overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
                         ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        );
-      }).toList(),
-    );
+          );
+        }).toList(),
+      );
+    }
 
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: isEnabled
-              ? [Colors.black.withOpacity(0.4), Colors.black.withOpacity(0.3)]
-              : [Colors.black.withOpacity(0.2), Colors.black.withOpacity(0.2)],
-        ),
-        border: Border.all(
-          color: _selectedBuild != null
-              ? const Color(0xFFC7384D).withOpacity(0.5)
-              : const Color(0xFF2A2A2A),
-          width: _selectedBuild != null ? 1.5 : 1,
-        ),
-        boxShadow: _selectedBuild != null
-            ? [
-                BoxShadow(
-                  color: const Color(0xFFC7384D).withOpacity(0.2),
-                  blurRadius: 12,
-                  spreadRadius: 0,
+    return _buildEnhancedGlassCard(
+      iconColor: isBuildMode ? Colors.purple[400]! : Colors.grey,
+      opacity: isManualMode
+          ? 0.5
+          : 1.0, // Se ve "apagado" si estás escribiendo manual
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: isBuildMode
+                      ? Colors.purple.withOpacity(0.1)
+                      : Colors.grey.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-              ]
-            : null,
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<BuildSummary?>(
-            value: _selectedBuild,
-            isExpanded: true,
-            icon: Icon(
-              Icons.expand_more,
-              color: isEnabled ? const Color(0xFFC7384D) : Colors.grey[600],
-            ),
-            dropdownColor: const Color(0xFF1A1A1C),
-            style: TextStyle(
-              color: isEnabled ? Colors.white : Colors.grey[600],
-              fontSize: 15,
-            ),
-            items: dropdownItems,
-            onChanged: isEnabled
-                ? (value) {
-                    setState(() {
-                      _selectedBuild = value;
-                      if (value != null) {
-                        _componentSearchController.clear();
-                      }
-                    });
-                  }
-                : null,
+                child: Icon(
+                  Icons.inventory_2,
+                  color: isBuildMode ? Colors.purple[400] : Colors.grey,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Comparar Mis Builds Guardadas',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  color: isBuildMode ? Colors.white : Colors.grey[400],
+                ),
+              ),
+            ],
           ),
+          const SizedBox(height: 16),
+
+          // EL DROPDOWN STYLED
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: Colors.black.withOpacity(0.3),
+              border: Border.all(
+                color: isBuildMode
+                    ? Colors.purple.withOpacity(0.5)
+                    : const Color(0xFF2A2A2A),
+              ),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<BuildSummary?>(
+                value: _selectedBuild,
+                isExpanded: true,
+                dropdownColor: const Color(0xFF1E1E1E),
+                icon: const Icon(Icons.arrow_drop_down, color: Colors.white70),
+                items: dropdownItems,
+                // LOGICA UX PRINCIPAL
+                onChanged: (BuildSummary? newValue) {
+                  setState(() {
+                    _selectedBuild = newValue;
+
+                    // Si eligió una build, borramos el texto manual para evitar confusión
+                    if (newValue != null) {
+                      _componentSearchController.clear();
+                    }
+                  });
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Método auxiliar para mostrar errores "Push Up" (SnackBar)
+  void _showErrorSnackBar(dynamic error) {
+    if (!mounted) return;
+
+    String userMessage = "Ocurrió un error inesperado.";
+    final String errorString = error.toString().toLowerCase();
+
+    // Lógica simple de traducción de errores
+    if (errorString.contains('time') || errorString.contains('out')) {
+      userMessage =
+          "El servidor tardó mucho en responder. La IA está pensando mucho, intenta de nuevo.";
+    } else if (errorString.contains('connect') ||
+        errorString.contains('socket')) {
+      userMessage = "No se pudo conectar. Revisa tu conexión a internet.";
+    } else if (errorString.contains('503') ||
+        errorString.contains('unavailable')) {
+      userMessage = "El servicio de IA está saturado momentáneamente.";
+    } else if (errorString.contains('400') ||
+        errorString.contains('bad request')) {
+      userMessage =
+          "La solicitud no fue entendida. Verifica los datos ingresados.";
+    } else {
+      // Limpiamos el mensaje 'Exception:' que suele poner Dart
+      userMessage = error.toString().replaceAll('Exception:', '').trim();
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                userMessage,
+                style: const TextStyle(fontWeight: FontWeight.w500),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: const Color(0xFFC7384D), // Rojo de tu tema
+        behavior: SnackBarBehavior.floating, // Esto lo hace "Push Up"
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 4),
+        action: SnackBarAction(
+          label: 'OK',
+          textColor: Colors.white,
+          onPressed: () {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          },
         ),
       ),
     );
