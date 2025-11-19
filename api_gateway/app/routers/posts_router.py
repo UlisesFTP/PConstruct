@@ -59,7 +59,13 @@ async def get_posts(request: Request, authorization: str | None = Header(None)):
             headers["X-User-ID"] = str(token_data["sub"])
 
     sort_by = request.query_params.get("sort_by", "recent")
-    params = {"sort_by": sort_by}
+    # Extraemos el seed, por defecto 0 si no viene
+    seed = request.query_params.get("seed", 0) 
+    
+    params = {
+        "sort_by": sort_by,
+        "seed": seed  # <--- ENVIAR AL MICROSERVICIO
+    }
 
     async with httpx.AsyncClient() as client:
         try:

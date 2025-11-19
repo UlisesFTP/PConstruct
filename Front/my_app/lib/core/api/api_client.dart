@@ -207,9 +207,25 @@ class ApiClient {
   }
 
   // --- MÉTODOS DE POSTS Y BÚSQUEDA (Sin cambios) ---
-  Future<List<Post>> getPosts() async {
+  Future<List<Post>> getPosts({
+    int page = 1, // O skip/limit según uses
+    String sortBy = 'recent',
+    int? seed, // <--- NUEVO
+  }) async {
     try {
-      final response = await _dio.get('/posts/');
+      // Ajusta esto según si usas paginación por página o skip/limit
+      final queryParams = {
+        'sort_by': sortBy,
+        'skip': (page - 1) * 20,
+        'limit': 20,
+      };
+
+      if (seed != null) {
+        queryParams['seed'] = seed; // <--- AGREGAR AL QUERY
+      }
+
+      final response = await _dio.get('/posts/', queryParameters: queryParams);
+
       if (response.statusCode == 200) {
         List<dynamic> postData = response.data;
         return postData.map((json) => Post.fromJson(json)).toList();

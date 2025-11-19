@@ -87,6 +87,7 @@ async def read_posts(
     skip: int = 0, 
     limit: int = 20, 
     sort_by: Optional[str] = "recent", # Añadido parámetro de orden
+    seed: Optional[int] = 0,
     db: AsyncSession = Depends(get_db),
     # Hacemos que el user_id sea opcional
     user_id: Optional[int] = Depends(get_current_user_id) if True else None # Truco para hacerlo opcional
@@ -101,7 +102,8 @@ async def read_posts(
         current_user_id=user_id, 
         sort_by=sort_by, # Pasar el parámetro
         skip=skip, 
-        limit=limit
+        limit=limit,
+        seed=seed
     )
     
     # --- El enriquecimiento de datos del autor se aplica a la lista devuelta por crud.get_posts ---

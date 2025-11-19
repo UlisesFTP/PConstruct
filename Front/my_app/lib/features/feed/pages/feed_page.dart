@@ -9,6 +9,7 @@ import 'package:my_app/core/widgets/create_post_modal.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'dart:convert';
 import 'package:visibility_detector/visibility_detector.dart';
+import 'dart:math';
 
 class FeedPage extends StatefulWidget {
   const FeedPage({super.key});
@@ -26,12 +27,14 @@ class _FeedPageState extends State<FeedPage> {
   final String _webSocketUrl = 'ws://localhost:8000/posts/ws/feed';
   DateTime? _lastLoadTime;
   bool _showNewPostsButton = false;
+  int _currentSeed = 0;
 
   @override
   void initState() {
     super.initState();
+    _currentSeed = Random().nextInt(100000);
     final apiClient = Provider.of<ApiClient>(context, listen: false);
-    _postsFuture = apiClient.getPosts();
+    _postsFuture = apiClient.getPosts(seed: _currentSeed, sortBy: 'popular');
     _loadPosts();
     _connectWebSocket();
   }
@@ -40,7 +43,15 @@ class _FeedPageState extends State<FeedPage> {
     print("FeedPage: Cargando posts vía HTTP...");
     final apiClient = Provider.of<ApiClient>(context, listen: false);
     setState(() {
-      _postsFuture = apiClient.getPosts();
+      // ¡IMPORTANTE!
+      // Generamos NUEVA semilla al refrescar. Esto cambia el orden en el backend.
+      _currentSeed = Random().nextInt(100000);
+
+      _postsFuture = apiClient.getPosts(
+        seed: _currentSeed,
+        sortBy: 'popular', // Asegúrate de pedir 'popular' para ver el algoritmo
+      );
+
       _lastLoadTime = DateTime.now();
       _showNewPostsButton = false;
     });
