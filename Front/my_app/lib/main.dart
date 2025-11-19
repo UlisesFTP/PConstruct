@@ -7,6 +7,7 @@ import 'package:my_app/features/auth/pages/login_page.dart';
 import 'package:my_app/features/auth/pages/recovery_page.dart';
 import 'package:my_app/features/auth/pages/register_page.dart';
 import 'package:my_app/features/auth/pages/verification_page.dart';
+import 'package:my_app/features/auth/pages/reset_password_page.dart';
 import 'package:my_app/features/components/pages/component_detail.dart';
 import 'package:my_app/features/feed/pages/feed_page.dart';
 import 'package:my_app/features/feed/pages/my_posts_page.dart';
@@ -62,15 +63,13 @@ class MyApp extends StatelessWidget {
       theme: AppTheme.darkTheme,
       debugShowCheckedModeBanner: false,
 
-      // --- AQUÍ ESTÁ LA MAGIA ---
-      // Usamos un Consumer para reaccionar a los cambios de AuthProvider
+      // --- MANEJO DE ESTADO DE SESIÓN ---
       home: Consumer<AuthProvider>(
         builder: (context, auth, child) {
-          // 1. Si auth.isLoading es true, estamos comprobando el token.
-          // Muestra una pantalla de carga (Splash Screen).
+          // 1. Splash Screen mientras carga
           if (auth.isLoading) {
             return const Scaffold(
-              backgroundColor: Color(0xFF0F0F0F), // Tu color de fondo
+              backgroundColor: Color(0xFF0F0F0F),
               body: Center(
                 child: CircularProgressIndicator(
                   color: Color.fromARGB(255, 197, 0, 72),
@@ -79,23 +78,45 @@ class MyApp extends StatelessWidget {
             );
           }
 
-          // 2. Si terminamos de cargar (isLoading = false) y
-          // NO está autenticado, muestra la LandingPage.
+          // 2. Si no está autenticado, ir a Landing
           if (!auth.isAuthenticated) {
             return const LandingPage();
           }
 
-          // 3. Si terminamos de cargar y SÍ está autenticado,
-          // muestra el Feed (MainLayout).
+          // 3. Si está autenticado, ir al Feed
           return const MainLayout(child: FeedPage());
         },
       ),
-      // --- FIN DE LA CORRECCIÓN ---
 
-      // Tus rutas están bien, pero 'home' ahora maneja el inicio
+      // --- RUTAS DINÁMICAS (PARA EL RESET DE CONTRASEÑA) ---
+      onGenerateRoute: (settings) {
+        // Interceptamos la navegación para buscar parámetros en la URL
+        if (settings.name != null) {
+          final uri = Uri.parse(settings.name!);
+
+          // Si la ruta es /reset-password
+          if (uri.path == '/reset-password') {
+            // Extraemos el token de ?token=XYZ
+            final token = uri.queryParameters['token'];
+
+            // Si hay token, mostramos la página de reseteo
+            if (token != null) {
+              return MaterialPageRoute(
+                builder: (context) => ResetPasswordPage(token: token),
+              );
+            }
+          }
+        }
+        // Si no coincide, dejamos que Flutter use 'routes' o muestre 404
+        return null;
+      },
+
+      // --- RUTAS ESTÁTICAS ---
       routes: {
         '/login': (context) => const LoginPage(),
         '/register': (context) => const RegistroPage(),
+        '/recovery': (context) =>
+            const PasswordRecoveryPage(), // Asegúrate de que esta ruta exista en tu flujo
         '/verification': (context) => const EmailVerificationPage(),
         '/feed': (context) => const MainLayout(child: FeedPage()),
         '/profile': (context) => const MainLayout(child: ProfilePage()),
