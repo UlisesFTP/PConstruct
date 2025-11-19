@@ -9,7 +9,7 @@ import 'package:my_app/core/widgets/create_post_modal.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'dart:convert';
 import 'package:visibility_detector/visibility_detector.dart';
-import 'dart:math';
+import 'dart:math'; // Importante para Random()
 
 class FeedPage extends StatefulWidget {
   const FeedPage({super.key});
@@ -19,102 +19,184 @@ class FeedPage extends StatefulWidget {
 }
 
 class _FeedPageState extends State<FeedPage> {
-  late Future<List<Post>> _postsFuture;
-  final Map<int, GlobalKey> _postKeys = {};
+  // --- ESTADO PARA INFINITE SCROLL ---
   final ScrollController _scrollController = ScrollController();
-  WebSocketChannel? _channel;
+  final Map<int, GlobalKey> _postKeys = {};
 
+  List<Post> _posts = []; // La lista acumulativa de posts
+  bool _isLoadingInitial = true; // Carga inicial (pantalla completa)
+  bool _isLoadingMore = false; // Carga de paginación (spinner abajo)
+  bool _hasMore = true; // ¿Quedan posts en el servidor?
+  int _page = 1; // Página actual
+  int _currentSeed = 0; // Semilla para mantener el orden
+  String _error = ''; // Manejo de errores
+
+  // --- WEBSOCKET ---
+  WebSocketChannel? _channel;
   final String _webSocketUrl = 'ws://localhost:8000/posts/ws/feed';
-  DateTime? _lastLoadTime;
   bool _showNewPostsButton = false;
-  int _currentSeed = 0;
+  DateTime? _lastLoadTime;
 
   @override
   void initState() {
     super.initState();
-    _currentSeed = Random().nextInt(100000);
-    final apiClient = Provider.of<ApiClient>(context, listen: false);
-    _postsFuture = apiClient.getPosts(seed: _currentSeed, sortBy: 'popular');
-    _loadPosts();
+
+    // 1. Configurar Listener del Scroll
+    _scrollController.addListener(_scrollListener);
+
+    // 2. Carga Inicial
+    _loadInitialPosts();
+
+    // 3. Conectar WebSocket
     _connectWebSocket();
   }
 
-  void _loadPosts() {
-    print("FeedPage: Cargando posts vía HTTP...");
-    final apiClient = Provider.of<ApiClient>(context, listen: false);
-    setState(() {
-      // ¡IMPORTANTE!
-      // Generamos NUEVA semilla al refrescar. Esto cambia el orden en el backend.
-      _currentSeed = Random().nextInt(100000);
-
-      _postsFuture = apiClient.getPosts(
-        seed: _currentSeed,
-        sortBy: 'popular', // Asegúrate de pedir 'popular' para ver el algoritmo
-      );
-
-      _lastLoadTime = DateTime.now();
-      _showNewPostsButton = false;
-    });
+  @override
+  void dispose() {
+    _scrollController.dispose(); // No olvidar limpiar el controller
+    _channel?.sink.close();
+    super.dispose();
   }
 
+  // --- DETECTOR DE SCROLL ---
+  void _scrollListener() {
+    // Si llegamos al final (menos 200px de margen) y no estamos cargando...
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      if (!_isLoadingMore && _hasMore) {
+        _loadMorePosts();
+      }
+    }
+  }
+
+  // --- CARGA INICIAL (o Refresco) ---
+  Future<void> _loadInitialPosts() async {
+    // Evitamos setState si el widget ya no está montado
+    if (!mounted) return;
+
+    setState(() {
+      _isLoadingInitial = true;
+      _error = '';
+      // Generamos NUEVA semilla para cambiar el orden aleatorio al refrescar
+      _currentSeed = Random().nextInt(100000);
+      _page = 1; // Reseteamos a página 1
+    });
+
+    try {
+      final apiClient = Provider.of<ApiClient>(context, listen: false);
+      // Pedimos la página 1
+      final newPosts = await apiClient.getPosts(
+        page: 1,
+        seed: _currentSeed,
+        sortBy: 'popular',
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _posts = newPosts;
+        _isLoadingInitial = false;
+        _lastLoadTime = DateTime.now();
+        _showNewPostsButton = false;
+        // Si llegaron menos de 20, es que no hay más páginas
+        _hasMore = newPosts.length >= 20;
+
+        // Generar Keys para mantener el estado de los videos/imágenes
+        _postKeys.clear();
+        for (var post in _posts) {
+          _postKeys[post.id] = GlobalKey();
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingInitial = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  // --- CARGAR MÁS (Paginación) ---
+  Future<void> _loadMorePosts() async {
+    if (_isLoadingMore || !_hasMore) return;
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    try {
+      final apiClient = Provider.of<ApiClient>(context, listen: false);
+      final nextPage = _page + 1;
+
+      // IMPORTANTE: Usamos la MISMA _currentSeed para que no salgan repetidos
+      final morePosts = await apiClient.getPosts(
+        page: nextPage,
+        seed: _currentSeed,
+        sortBy: 'popular',
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        if (morePosts.isEmpty) {
+          _hasMore = false; // Se acabó el feed
+        } else {
+          // Añadimos los nuevos posts a la lista existente
+          _posts.addAll(morePosts);
+          _page = nextPage;
+
+          // Generar Keys para los nuevos
+          for (var post in morePosts) {
+            _postKeys[post.id] = GlobalKey();
+          }
+
+          // Si llegaron menos de 20, asumimos que es el final
+          if (morePosts.length < 20) _hasMore = false;
+        }
+        _isLoadingMore = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingMore = false;
+        // Podrías mostrar un SnackBar aquí si falla la carga de más posts
+      });
+    }
+  }
+
+  // --- LÓGICA DE TEMPORIZADOR Y WEBSOCKET ---
   void _checkRefreshTimer() {
     if (_lastLoadTime == null) return;
-
-    final now = DateTime.now();
-    final difference = now.difference(_lastLoadTime!);
-
+    final difference = DateTime.now().difference(_lastLoadTime!);
+    // Si pasaron más de 9 minutos, recargamos para tener contenido fresco
     if (difference.inMinutes >= 9) {
-      print("FeedPage: Datos rancios (>= 9 min) detectados, recargando...");
-      _loadPosts();
+      print("Datos rancios, recargando...");
+      _loadInitialPosts();
     }
   }
 
   void _connectWebSocket() {
     try {
-      print("FeedPage: Conectando a WebSocket en $_webSocketUrl");
       _channel = WebSocketChannel.connect(Uri.parse(_webSocketUrl));
-
-      _channel!.stream.listen(
-        (message) {
-          print('WebSocket message received: $message');
-          final data = jsonDecode(message);
-          if (data['event'] == 'new_post') {
-            setState(() {
-              _showNewPostsButton = true;
-            });
-          }
-
-          if (data['event'] == 'post_update' && data['action'] == 'edit') {
-            _loadPosts();
-          }
-
-          if (data['event'] == 'post_delete') {
-            _loadPosts();
-          }
-        },
-        onDone: () {
-          print('WebSocket channel cerrado (onDone)');
-        },
-        onError: (error) {
-          print('WebSocket error: $error');
-        },
-      );
+      _channel!.stream.listen((message) {
+        final data = jsonDecode(message);
+        if (data['event'] == 'new_post') {
+          setState(() => _showNewPostsButton = true);
+        }
+        // Si se edita o borra, recargamos para mantener consistencia
+        // (En una app más compleja, actualizarías solo el item localmente)
+        if (data['event'] == 'post_update' || data['event'] == 'post_delete') {
+          _loadInitialPosts();
+        }
+      });
     } catch (e) {
-      print("Error al conectar al WebSocket: $e");
+      print("Error WebSocket: $e");
     }
-  }
-
-  @override
-  void dispose() {
-    _channel?.sink.close();
-    _scrollController.dispose();
-    super.dispose();
   }
 
   void scrollToPostById(int postId) async {
     final postKey = _postKeys[postId];
     if (postKey != null && postKey.currentContext != null) {
-      print("✅ FeedPage: Scroll requested for post $postId");
       await Future.delayed(const Duration(milliseconds: 50));
       Scrollable.ensureVisible(
         postKey.currentContext!,
@@ -122,8 +204,6 @@ class _FeedPageState extends State<FeedPage> {
         curve: Curves.easeInOut,
         alignment: 0.5,
       );
-    } else {
-      print("❌ FeedPage: No key/context for post $postId");
     }
   }
 
@@ -133,34 +213,77 @@ class _FeedPageState extends State<FeedPage> {
       key: const Key('feed_page_visibility'),
       onVisibilityChanged: (visibilityInfo) {
         if (visibilityInfo.visibleFraction == 1.0) {
-          print("FeedPage: Página visible. Comprobando temporizador...");
           _checkRefreshTimer();
         }
       },
       child: Scaffold(
         backgroundColor: Colors.transparent,
         floatingActionButton: _buildFloatingActionButton(),
-        body: FutureBuilder<List<Post>>(
-          future: _postsFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return _buildLoadingIndicator();
-            }
-            if (snapshot.hasError) {
-              return _buildErrorWidget(snapshot.error.toString());
-            }
-            if (snapshot.hasData) {
-              final posts = snapshot.data!;
-              _postKeys.clear();
-              for (var post in posts) {
-                _postKeys[post.id] = GlobalKey();
-              }
-
-              return _buildPostsList(posts);
-            }
-            return _buildLoadingIndicator();
-          },
+        body: Stack(
+          children: [
+            _buildMainContent(),
+            if (_showNewPostsButton) _buildNewPostsButton(),
+          ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildMainContent() {
+    if (_isLoadingInitial) {
+      return _buildLoadingIndicator();
+    }
+
+    if (_error.isNotEmpty) {
+      return _buildErrorWidget(_error);
+    }
+
+    if (_posts.isEmpty) {
+      return const Center(
+        child: Text(
+          "No hay publicaciones aún.",
+          style: TextStyle(color: Colors.white),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      backgroundColor: const Color(0xFF1A1A1C),
+      color: const Color.fromARGB(255, 197, 0, 69),
+      onRefresh: _loadInitialPosts, // Conectar al Pull-to-Refresh
+      child: ListView.builder(
+        controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        // +1 item al final para el spinner de carga inferior
+        itemCount: _posts.length + (_isLoadingMore ? 1 : 0),
+        itemBuilder: (context, index) {
+          // Si es el último item y estamos cargando, mostramos spinner
+          if (index == _posts.length) {
+            return const Padding(
+              padding: EdgeInsets.all(20.0),
+              child: Center(
+                child: CircularProgressIndicator(
+                  color: Color.fromARGB(255, 197, 0, 69),
+                  strokeWidth: 2,
+                ),
+              ),
+            );
+          }
+
+          final post = _posts[index];
+          return Center(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 900),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14.0,
+                  vertical: 8.0,
+                ),
+                child: PostCard(key: _postKeys[post.id], post: post),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -174,7 +297,8 @@ class _FeedPageState extends State<FeedPage> {
           backgroundColor: const Color(0xFF1A1A1C),
           builder: (modalContext) => CreatePostModal(
             onPostCreated: () {
-              print("Post creado. El feed se actualizará.");
+              // Al crear, recargamos para ver el nuevo post arriba
+              _loadInitialPosts();
             },
           ),
         );
@@ -266,7 +390,7 @@ class _FeedPageState extends State<FeedPage> {
             ),
             const SizedBox(height: 20),
             ElevatedButton(
-              onPressed: _loadPosts,
+              onPressed: _loadInitialPosts,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color.fromARGB(255, 197, 0, 69),
                 shape: RoundedRectangleBorder(
@@ -285,41 +409,6 @@ class _FeedPageState extends State<FeedPage> {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildPostsList(List<Post> posts) {
-    return Stack(
-      children: [
-        RefreshIndicator(
-          backgroundColor: const Color(0xFF1A1A1C),
-          color: const Color.fromARGB(255, 197, 0, 69),
-          onRefresh: () async {
-            _loadPosts();
-          },
-          child: ListView.builder(
-            controller: _scrollController,
-            physics: const AlwaysScrollableScrollPhysics(),
-            itemCount: posts.length,
-            itemBuilder: (context, index) {
-              final post = posts[index];
-              return Center(
-                child: Container(
-                  constraints: const BoxConstraints(maxWidth: 900),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14.0,
-                      vertical: 8.0,
-                    ),
-                    child: PostCard(key: _postKeys[post.id], post: post),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-        if (_showNewPostsButton) _buildNewPostsButton(),
-      ],
     );
   }
 
@@ -366,7 +455,7 @@ class _FeedPageState extends State<FeedPage> {
                   ),
                 ),
                 onPressed: () {
-                  _loadPosts();
+                  _loadInitialPosts();
                   _scrollController.animateTo(
                     0.0,
                     duration: const Duration(milliseconds: 300),
