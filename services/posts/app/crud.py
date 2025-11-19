@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_, delete, desc, func # <-- LÍNEA CORREGIDA
+from sqlalchemy import select, or_, delete, desc, func , case
 from sqlalchemy.orm import selectinload, contains_eager
 from sqlalchemy.sql.expression import extract
 from . import models, schemas
@@ -21,32 +21,29 @@ async def create_post(db: AsyncSession, post: schemas.PostCreate, user_id: int):
 async def get_posts(
     db: AsyncSession, 
     current_user_id: Optional[int] = None, 
-    sort_by: str = "recent", # Nuevo parámetro para ordenar
+    sort_by: str = "recent", 
     skip: int = 0, 
     limit: int = 20
 ):
     """
-    Obtiene una lista de publicaciones para el feed, incluyendo si el 
-    usuario actual le ha dado like, y con ordenamiento dinámico.
-    sort_by: "recent" (default) o "popular".
+    Obtiene publicaciones con algoritmo de "Ranking Ponderado + Aleatoriedad".
     """
     
-    # Query base con carga eficiente de relaciones
     query = (
         select(models.Post)
         .options(
-            selectinload(models.Post.comments), # Carga comentarios
-            selectinload(models.Post.likes)     # Carga TODOS los likes
+            selectinload(models.Post.comments), 
+            selectinload(models.Post.likes)
         )
     )
 
     if sort_by == "popular":
-        # --- Algoritmo de Ranking Ponderado (Hot Ranking) ---
-        # Usamos 'epoch' (segundos desde 1970) para calcular la antigüedad
-        age_in_seconds = func.greatest(1.0, extract('epoch', func.now() - models.Post.created_at))
+        # 1. CALCULAR ANTIGÜEDAD
+        # Obtenemos la edad del post en horas
+        age_in_seconds = extract('epoch', func.now() - models.Post.created_at)
         age_in_hours = age_in_seconds / 3600.0
         
-        # Subqueries para contar likes y comentarios eficientemente
+        # Subqueries para conteos (igual que antes)
         like_count_sq = (
             select(models.Like.post_id, func.count(models.Like.id).label("like_count"))
             .group_by(models.Like.post_id)
@@ -58,44 +55,60 @@ async def get_posts(
             .subquery()
         )
         
-        # Unimos la query principal con los conteos
         query = query.outerjoin(like_count_sq, models.Post.id == like_count_sq.c.post_id) \
                    .outerjoin(comment_count_sq, models.Post.id == comment_count_sq.c.post_id)
-                   
+        
+        # 2. FACTOR DE INTERACCIÓN
+        # Usamos coalesce para que null sea 0
         likes = func.coalesce(like_count_sq.c.like_count, 0)
-        # Damos un poco más de peso a los comentarios
-        comments = func.coalesce(comment_count_sq.c.comment_count, 0) * 1.5 
+        # Los comentarios valen x2.0 puntos porque indican más esfuerzo/interés
+        comments = func.coalesce(comment_count_sq.c.comment_count, 0) * 2.0
         
-        interaction_score = (likes + comments)
-        
-        # Fórmula "Hot": Puntuación / (Antigüedad + Offset)^Gravedad
-        # Offset (2) previene que posts muy nuevos dominen
-        # Gravedad (1.8) es un estándar común
-        score = interaction_score / func.pow((age_in_hours + 2), 1.8)
-        
-        # Opcional: solo rankear posts de los últimos 7 días
-        query = query.filter(models.Post.created_at >= (datetime.now() - timedelta(days=7)))
-        
-        query = query.order_by(desc(score))
-        # --- Fin del Algoritmo de Ranking ---
+        # 3. IMPULSO DE FRESCURA (NEW POST BOOST)
+        # Si el post tiene menos de 6 horas, le regalamos 10 puntos base.
+        # Esto hace que aparezca arriba. Después de 6 horas, este bono desaparece.
+        freshness_boost = case(
+            (age_in_hours < 6.0, 10.0), # Regalo de puntos si es nuevo
+            else_=0.0
+        )
 
-    else: # "recent" o por defecto
+        # Sumamos 1.0 base para evitar divisiones por cero o puntuaciones nulas
+        base_score = likes + comments + freshness_boost + 1.0
+        
+        # 4. GRAVEDAD (DECAY)
+        # La puntuación se divide por el tiempo. Cuanto más viejo, más baja.
+        # Gravedad 1.8 es agresiva (bajan rápido), 1.5 es más suave.
+        gravity = 1.8
+        time_decay = func.pow((age_in_hours + 2.0), gravity)
+        
+        hot_score = base_score / time_decay
+        
+        # 5. FACTOR DE ALEATORIEDAD (JITTER)
+        # Multiplicamos el score final por un valor aleatorio entre 0.8 y 1.2.
+        # Esto mezcla ligeramente los resultados cercanos para que el feed no sea siempre igual.
+        # func.random() devuelve 0.0 a 1.0.
+        # Formula: score * (0.8 + (random * 0.4))
+        random_factor = 0.8 + (func.random() * 0.4)
+        
+        final_rank = hot_score * random_factor
+        
+        # Filtramos posts muy viejos para optimizar (ej. últimos 30 días) si hay muchos datos
+        # query = query.filter(models.Post.created_at >= (datetime.now() - timedelta(days=30)))
+        
+        query = query.order_by(desc(final_rank))
+
+    else: # "recent"
         query = query.order_by(models.Post.created_at.desc())
 
-    # Aplicar paginación
+
     query = query.offset(skip).limit(limit)
 
     result = await db.execute(query)
     posts = result.scalars().unique().all()
     
-    # Preparamos una lista para los datos finales
     post_data_list = []
-    
-    # Obtenemos los IDs de los posts obtenidos
     post_ids = [post.id for post in posts]
 
-    # Hacemos una consulta separada para saber a cuáles de ESTOS posts 
-    # le ha dado like el usuario actual (si hay un usuario logueado)
     user_liked_post_ids = set()
     if current_user_id is not None and post_ids:
         like_query = (
@@ -106,12 +119,12 @@ async def get_posts(
         like_result = await db.execute(like_query)
         user_liked_post_ids = {post_id for post_id, in like_result.all()}
 
-    # Construimos la respuesta final
     for post in posts:
         post_data = schemas.Post.model_validate(post)
         post_data.likes_count = len(post.likes)
-        # Establecemos si el usuario actual le dio like
         post_data.is_liked_by_user = post.id in user_liked_post_ids
+        # Aseguramos que comments_count se pase correctamente si está en tu schema
+        # post_data.comments_count = len(post.comments) 
         post_data_list.append(post_data)
         
     return post_data_list
