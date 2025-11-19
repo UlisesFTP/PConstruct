@@ -26,10 +26,14 @@ Componentes:
 {component_list}
 
 Reglas de respuesta:
-1. Analiza la compatibilidad (ej. socket de CPU vs motherboard, tipo de RAM vs motherboard, RAM vs CPU, etc.).
+1. Analiza la compatibilidad técnica y física. Específicamente verifica:
+   - Socket de CPU vs Motherboard.
+   - Tipo de RAM (DDR4/DDR5) vs Motherboard.
+   - Dimensiones físicas: ¿Cabe la GPU y el Cooler en el Gabinete seleccionado?
+   - Potencia: ¿Es la PSU (Fuente) suficiente para el consumo total (especialmente CPU + GPU)?
 2. Si todos los componentes son compatibles:
    Responde SOLAMENTE con el siguiente JSON:
-   {{"compatible": true, "reason": "Todos los componentes son compatibles."}}
+   {{"compatible": true, "reason": "Todos los componentes son compatibles (Socket, RAM, dimensiones y potencia correctos)."}}
 3. Si encuentras una incompatibilidad:
    Responde SOLAMENTE con el siguiente JSON, explicando el problema específico en español:
    {{"compatible": false, "reason": "Incompatibilidad detectada: [Tu explicación del problema aquí]."}}

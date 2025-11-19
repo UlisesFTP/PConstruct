@@ -250,6 +250,7 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
   Future<void> _runCompatibilityCheck() async {
     if (_isCheckingCompatibility) return;
 
+    // La validación sigue requiriendo CPU y Motherboard como base mínima
     final cpu = selectedComponents['cpu']?.name;
     final motherboard = selectedComponents['motherboard']?.name;
 
@@ -263,6 +264,12 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
         'motherboard': motherboard,
         'ram': selectedComponents['ram']?.name,
         'gpu': selectedComponents['gpu']?.name,
+        // --- NUEVOS COMPONENTES AGREGADOS ---
+        'psu': selectedComponents['psu']?.name, // Fuente de poder
+        'gabinete': selectedComponents['gabinete']?.name, // Case / Chasis
+        'cooler': selectedComponents['cooler']
+            ?.name, // (Opcional) También es útil para altura vs gabinete
+        // ------------------------------------
       };
 
       final response = await _apiClient.checkCompatibility(componentsToVerify);
@@ -1155,7 +1162,15 @@ class _BuildConstructorPageState extends State<BuildConstructorPage> {
   ) {
     final bool isSelected = selectedComponents[typeKey] == comp;
     final theme = Theme.of(context);
-    const keyComponents = ['cpu', 'motherboard', 'ram', 'gpu'];
+    const keyComponents = [
+      'cpu',
+      'motherboard',
+      'ram',
+      'gpu',
+      'psu',
+      'gabinete',
+      'cooler',
+    ];
 
     return Container(
       margin: EdgeInsets.only(bottom: isMobile ? 8 : 12),
